@@ -45,7 +45,6 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 COPY novnc-index.html /usr/share/novnc/index.html
-COPY vnc.html /usr/share/novnc/vnc.html
 
 EXPOSE 6080
 

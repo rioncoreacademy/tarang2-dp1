@@ -1,6 +1,8 @@
 {
   "name": "ChipCraft Lab — Digital Design & VLSI",
-  "image": "ghcr.io/rbabu2k/chipcraft:latest",
+  "build": {
+    "dockerfile": "../../Dockerfile"
+  },
   "forwardPorts": [6080],
   "portsAttributes": {
     "6080": {
