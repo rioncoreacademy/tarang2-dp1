@@ -280,9 +280,9 @@ async def callback(code: str):
 
 def _desktop_url(port: int, request: Request) -> str:
     if CODESPACE_NAME:
-        return f"https://{CODESPACE_NAME}-{port}.preview.app.github.dev/vnc.html"
+        return f"https://{CODESPACE_NAME}-{port}.app.github.dev/"
     host = request.headers.get("host", "localhost").split(":")[0]
-    return f"http://{host}:{port}/vnc.html"
+    return f"http://{host}:{port}/"
 
 
 @app.get("/launch")

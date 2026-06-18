@@ -1,0 +1,92 @@
+# ChipCraft Lab — Single-User Setup
+
+Each student gets their own isolated Codespace with a full XFCE4 desktop running in the browser via noVNC.
+
+## How It Works
+
+```
+Student opens repo → creates Codespace → XFCE4 desktop opens on port 6080
+```
+
+- The devcontainer pulls `ghcr.io/narrave/chipcraft:latest` from GitHub Container Registry
+- `start.sh` launches TightVNC + websockify inside the container
+- Port 6080 is forwarded by Codespaces and opens automatically in the browser
+- No login required — password is `novnc`
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `devcontainer.json` | Codespaces config — image, port forwarding, startup command |
+| `start.sh` | Starts VNC server and websockify on container boot |
+
+## Student Instructions
+
+1. Go to `https://github.com/narrave/chipcraft-lab`
+2. Click **Code → Codespaces → Create codespace on main**
+3. When prompted, select **"ChipCraft Lab — Digital Design & VLSI"**
+4. Wait ~2 minutes for the container to start
+5. Port 6080 opens automatically → click **Connect**
+6. Enter password: `novnc`
+7. XFCE4 desktop is ready
+
+## Requirements
+
+- Each student needs a **GitHub account**
+- The repo must be **public** (or students added as collaborators)
+- The GHCR image `ghcr.io/narrave/chipcraft` must be **public**
+
+## How to Make Repo & Image Public
+
+**Repo:**
+GitHub → repo Settings → scroll to Danger Zone → **Change visibility → Public**
+
+**GHCR Image:**
+GitHub → your profile → Packages → `chipcraft` → Package Settings → **Change visibility → Public**
+
+## How Many Students
+
+Each student runs their **own Codespace** — no sharing, no conflicts.
+
+| GitHub Plan | Free compute hours/month | Storage |
+|-------------|--------------------------|---------|
+| Free | 120 hours | 15 GB |
+| Pro ($4/month) | 180 hours | 20 GB |
+
+Each Codespace runs independently so there is no limit on number of students — each uses their own GitHub account's quota.
+
+## Docker Image
+
+The image is built automatically by GitHub Actions when the `Dockerfile` changes:
+
+```
+ghcr.io/narrave/chipcraft:latest
+```
+
+Workflow: `.github/workflows/publish-image.yml`
+
+## What Is Inside the Image
+
+- Ubuntu 22.04
+- XFCE4 desktop
+- TightVNC server
+- noVNC + websockify (browser-based VNC)
+- Python 3 + pip
+- xfce4-terminal, mousepad editor
+
+## Troubleshooting
+
+**Desktop not loading:**
+```bash
+export USER=ubuntu && bash /workspaces/chipcraft-lab/.devcontainer/single-user/start.sh
+```
+
+**Check if VNC is running:**
+```bash
+ps aux | grep -E "vnc|websockify" | grep -v grep
+```
+
+**Check websockify log:**
+```bash
+cat /tmp/novnc.log
+```
