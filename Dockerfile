@@ -26,6 +26,7 @@ RUN apt-get update \
         bash \
         # Editors
         vim \
+        vim-gtk3 \
         mousepad \
         # Python
         python3 \
