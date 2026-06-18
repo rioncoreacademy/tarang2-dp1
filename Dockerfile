@@ -8,7 +8,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     VNC_COL_DEPTH=24
 
 RUN apt-get update \
-    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
         xfce4 \
         xfce4-terminal \
@@ -22,22 +21,11 @@ RUN apt-get update \
         ca-certificates \
         curl \
         bash \
-        vim \
-        vim-gtk3 \
-        sdcc \
-        build-essential \
-        verilator \
-        gtkwave \
+        python3 \
+        python3-pip \
+        mousepad \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && apt-get install -y --no-install-recommends openssl \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN mkdir -p /opt/chipcraft
-
-COPY chipcraft-run.sh /usr/local/bin/vrun
-RUN chmod +x /usr/local/bin/vrun
 
 RUN useradd -m -s /bin/bash ubuntu
 
