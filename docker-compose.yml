@@ -7,8 +7,8 @@ services:
     ports:
       - "80:8000"
     environment:
-      GITHUB_CLIENT_ID:     ${GITHUB_CLIENT_ID}
-      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      GH_CLIENT_ID:     ${GH_CLIENT_ID}
+      GH_CLIENT_SECRET: ${GH_CLIENT_SECRET}
       TEMPLATE_REPO:        ${TEMPLATE_REPO:-}
       NOVNC_IMAGE:          ubuntu-novnc:latest
       VNC_PASSWORD:         ${VNC_PASSWORD:-novnc}
