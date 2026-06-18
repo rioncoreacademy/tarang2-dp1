@@ -19,4 +19,4 @@ else
     echo "⚠ No secrets found — .env copied from .env.example. Edit it manually before starting."
 fi
 
-docker compose build
+docker build -t ubuntu-novnc:latest .
