@@ -8,7 +8,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     VNC_COL_DEPTH=24
 
 RUN apt-get update \
+    && dpkg --add-architecture i386 \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
+        # Desktop & VNC
         xfce4 \
         xfce4-terminal \
         tightvncserver \
@@ -21,9 +24,33 @@ RUN apt-get update \
         ca-certificates \
         curl \
         bash \
+        # Editors
+        vim \
+        mousepad \
+        # Python
         python3 \
         python3-pip \
-        mousepad \
+        # Verilog simulation (ModelSim replacement)
+        verilator \
+        gtkwave \
+        # C compiler for microcontrollers (SDCC kept)
+        sdcc \
+        # Build tools
+        build-essential \
+        bison \
+        flex \
+        texinfo \
+        libboost-dev \
+        git \
+        # 32-bit libs (needed by some EDA tools)
+        libc6:i386 \
+        libncurses5:i386 \
+        libstdc++6:i386 \
+        lib32ncurses6 \
+        libxft2 \
+        libxft2:i386 \
+        libxext6 \
+        libxext6:i386 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
