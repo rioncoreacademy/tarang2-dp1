@@ -14,8 +14,8 @@
     "6085": {"label": "Lab Desktop 5", "visibility": "public"}
   },
   "secrets": {
-    "GITHUB_CLIENT_ID":     {"description": "GitHub OAuth App Client ID"},
-    "GITHUB_CLIENT_SECRET": {"description": "GitHub OAuth App Client Secret"},
+    "GH_CLIENT_ID":     {"description": "GitHub OAuth App Client ID"},
+    "GH_CLIENT_SECRET": {"description": "GitHub OAuth App Client Secret"},
     "CHIPCRAFT_KEY":        {"description": "Encryption key for lab files"},
     "VNC_PASSWORD":         {"description": "VNC password for student desktops (default: novnc)"},
     "TEMPLATE_REPO":        {"description": "GitHub repo to fork per student e.g. narrave/lab-template (optional)"}

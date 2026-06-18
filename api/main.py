@@ -11,8 +11,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 app = FastAPI()
 
-GITHUB_CLIENT_ID     = os.environ.get("GITHUB_CLIENT_ID", "")
-GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
+GH_CLIENT_ID     = os.environ.get("GH_CLIENT_ID", "")
+GH_CLIENT_SECRET = os.environ.get("GH_CLIENT_SECRET", "")
 TEMPLATE_REPO        = os.environ.get("TEMPLATE_REPO", "")
 NOVNC_IMAGE          = os.environ.get("NOVNC_IMAGE", "ubuntu-novnc:latest")
 VNC_PASSWORD         = os.environ.get("VNC_PASSWORD", "novnc")
@@ -231,7 +231,7 @@ async def home(session: str = Cookie(default=None)):
 def login():
     url = (
         f"https://github.com/login/oauth/authorize"
-        f"?client_id={GITHUB_CLIENT_ID}&scope=repo&state={secrets.token_urlsafe(8)}"
+        f"?client_id={GH_CLIENT_ID}&scope=repo&state={secrets.token_urlsafe(8)}"
     )
     return RedirectResponse(url)
 
@@ -242,8 +242,8 @@ async def callback(code: str):
         r = await client.post(
             "https://github.com/login/oauth/access_token",
             json={
-                "client_id": GITHUB_CLIENT_ID,
-                "client_secret": GITHUB_CLIENT_SECRET,
+                "client_id": GH_CLIENT_ID,
+                "client_secret": GH_CLIENT_SECRET,
                 "code": code,
             },
             headers={"Accept": "application/json"},
