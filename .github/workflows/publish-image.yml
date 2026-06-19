@@ -8,6 +8,7 @@ on:
       - entrypoint.sh
       - chipcraft-run.sh
       - novnc-index.html
+      - tools/decrypt_watch.sh
 
 jobs:
   build-and-push:
