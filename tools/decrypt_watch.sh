@@ -75,6 +75,10 @@ decrypt_file() {
     local out="$LAB_DIR/$base"
     if openssl enc -d -aes-256-cbc -pbkdf2 \
            -k "$KEY" -in "$enc" -out "$out" 2>/dev/null; then
+        # Prepend a watermark so any leaked copy can be traced back to this student.
+        # The comment is valid Verilog and survives editor saves and re-encryption.
+        local stamp="// [ChipCraft] Student: @${GITHUB_USER:-unknown} | $(date -u +%Y-%m-%d)"
+        printf '%s\n' "$stamp" | cat - "$out" > "${out}.wm" && mv "${out}.wm" "$out"
         echo "[lab] Decrypted : $base"
     else
         echo "[lab] ERROR – could not decrypt: $(basename "$enc")" >&2

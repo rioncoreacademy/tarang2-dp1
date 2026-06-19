@@ -96,9 +96,10 @@ def _launch_container(github_user: str, port: int, session_token: str) -> str:
             "VNC_PASSWORD":     VNC_PASSWORD,
             "BOOTSTRAP_TOKEN":  boot_token,
             "API_INTERNAL_URL": "http://api:8000",
-            # ~/lab is where _clone_repo puts the student's git repo
             "WORK_DIR":         "/home/ubuntu/lab",
             "LAB_DIR":          "/home/ubuntu/labs",
+            # Used to watermark decrypted files so leaks can be traced
+            "GITHUB_USER":      github_user,
         },
         volumes={
             SHARED_PATH: {"bind": "/home/ubuntu/shared", "mode": "ro"},
@@ -108,6 +109,8 @@ def _launch_container(github_user: str, port: int, session_token: str) -> str:
         tmpfs={"/home/ubuntu/labs": "size=100m,uid=1000,gid=1000,mode=0700"},
         # Join the compose network so the container can reach http://api:8000
         network=COMPOSE_NETWORK,
+        # Needed so entrypoint.sh can apply egress iptables rules
+        cap_add=["NET_ADMIN"],
     )
     return c.id
 

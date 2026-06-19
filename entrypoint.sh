@@ -8,6 +8,26 @@ VNC_PORT=${VNC_PORT:-5901}
 NOVNC_PORT=${NOVNC_PORT:-6080}
 VNC_PASSWORD=${VNC_PASSWORD:-novnc}
 
+# ── Egress firewall ──────────────────────────────────────────────────────────
+# Block outbound internet so students cannot upload decrypted .v files to
+# paste sites, email, or file-sharing services.
+# Allows: loopback, internal Docker network (API key), DNS, GitHub (git push).
+# Blocks: everything else — HTTP/HTTPS to external sites, SMTP, etc.
+sudo iptables -A OUTPUT -o lo -j ACCEPT
+sudo iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+sudo iptables -A OUTPUT -d 172.16.0.0/12  -j ACCEPT   # Docker internal
+sudo iptables -A OUTPUT -d 10.0.0.0/8     -j ACCEPT   # Docker internal
+sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT   # DNS
+sudo iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT   # DNS over TCP
+# GitHub IP ranges (for git push / git clone)
+sudo iptables -A OUTPUT -p tcp --dport 443 -d 140.82.112.0/20  -j ACCEPT
+sudo iptables -A OUTPUT -p tcp --dport 443 -d 185.199.108.0/22 -j ACCEPT
+sudo iptables -A OUTPUT -p tcp --dport 443 -d 192.30.252.0/22  -j ACCEPT
+sudo iptables -A OUTPUT -p tcp --dport 22  -d 140.82.112.0/20  -j ACCEPT
+sudo iptables -P OUTPUT DROP               # block everything else
+echo "Egress firewall applied."
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Kill any leftover VNC lock from a previous run
 vncserver -kill :1 2>/dev/null || true
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true

@@ -61,8 +61,16 @@ RUN apt-get update \
         libxext6:i386 \
         # File-save watcher (needed by decrypt_watch.sh)
         inotify-tools \
+        # Egress firewall (blocks students uploading decrypted files to internet)
+        iptables \
+        sudo \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Allow ubuntu to run only iptables via sudo (no full root access)
+RUN echo "ubuntu ALL=(root) NOPASSWD: /sbin/iptables" \
+        > /etc/sudoers.d/lab-iptables \
+    && chmod 440 /etc/sudoers.d/lab-iptables
 
 # Install latest Verilator + GTKWave via OSS CAD Suite (pre-built binaries)
 RUN LATEST_URL=$(curl -s https://api.github.com/repos/YosysHQ/oss-cad-suite-build/releases/latest \
