@@ -32,24 +32,20 @@ mkdir -p "$HOME/.vnc" /tmp/runtime-ubuntu
 chmod 700 /tmp/runtime-ubuntu
 touch "$HOME/.Xresources"
 
-# Create VNC password file — write encrypted password to file directly
-printf '%s\n%s\n' "$VNC_PASSWORD" "$VNC_PASSWORD" | vncpasswd "$HOME/.vnc/passwd"
-chmod 600 "$HOME/.vnc/passwd"
-
 # Clean up any leftover lock files from a previous run
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
 
-# Start Xvnc directly (bypass the vncserver wrapper script which drops some flags).
-# -rfbauth    : explicit path to the password file
-# -localhost no : accept connections from websockify (not loopback-only)
-# -noclipboard  : block clipboard sync between container and browser (TigerVNC flag)
+# Start Xvnc with no VNC-level password.
+# Security is already enforced at the GitHub OAuth layer before this container starts.
+# -SecurityTypes None : no VNC password — websockify (localhost) is the only caller
+# -localhost yes      : VNC port is only reachable from inside this container
+# -noclipboard        : block clipboard sync between container and browser
 Xvnc :1 \
-    -geometry   "$VNC_GEOMETRY" \
-    -depth      "$VNC_DEPTH" \
-    -rfbport    "$VNC_PORT" \
-    -rfbauth    "$HOME/.vnc/passwd" \
-    -SecurityTypes VncAuth \
-    -localhost  no \
+    -geometry       "$VNC_GEOMETRY" \
+    -depth          "$VNC_DEPTH" \
+    -rfbport        "$VNC_PORT" \
+    -SecurityTypes  None \
+    -localhost      yes \
     -noclipboard \
     &
 
