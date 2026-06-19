@@ -59,6 +59,8 @@ RUN apt-get update \
         libxft2:i386 \
         libxext6 \
         libxext6:i386 \
+        # File-save watcher (needed by decrypt_watch.sh)
+        inotify-tools \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -73,6 +75,9 @@ RUN useradd -m -s /bin/bash ubuntu
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
+COPY tools/decrypt_watch.sh /usr/local/bin/decrypt_watch.sh
+RUN chmod +x /usr/local/bin/decrypt_watch.sh
 
 COPY novnc-index.html /usr/share/novnc/index.html
 

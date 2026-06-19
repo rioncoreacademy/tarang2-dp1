@@ -1,0 +1,14 @@
+{
+  "name": "ChipCraft Lab",
+  "image": "ghcr.io/narrave/chipcraft:latest",
+  "overrideCommand": false,
+  "forwardPorts": [6080],
+  "portsAttributes": {
+    "6080": {
+      "label": "Lab Desktop",
+      "onAutoForward": "openBrowser",
+      "protocol": "http"
+    }
+  },
+  "remoteUser": "ubuntu"
+}

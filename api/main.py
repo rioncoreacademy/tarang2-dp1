@@ -6,8 +6,9 @@ import time
 
 import docker
 import httpx
-from fastapi import Cookie, FastAPI, Request
+from fastapi import Cookie, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel
 
 app = FastAPI()
 
@@ -22,9 +23,17 @@ SESSION_TTL          = int(os.environ.get("SESSION_TTL", "14400"))  # 4 hours
 PORT_START           = int(os.environ.get("PORT_START", "6081"))
 PORT_END             = int(os.environ.get("PORT_END", "6180"))       # 100 slots
 CODESPACE_NAME       = os.environ.get("CODESPACE_NAME", "")         # set automatically by Codespaces
+# Docker network that the API is on — student containers join it to reach /lab-key
+COMPOSE_NETWORK      = os.environ.get("COMPOSE_NETWORK", "nvr_default")
+# Bootstrap token is valid for this many seconds (consumed on first use)
+BOOTSTRAP_TTL        = int(os.environ.get("BOOTSTRAP_TTL", "30"))
 
 _sessions: dict = {}
 _lock = threading.Lock()
+
+# One-time bootstrap tokens: token → expiry timestamp
+_bootstrap_tokens: dict = {}
+_tokens_lock = threading.Lock()
 
 
 # ── background cleanup ──────────────────────────────────────────────────────
@@ -52,6 +61,12 @@ def _cleanup_loop():
                 print(f"expiring container {cid[:12]}", flush=True)
                 threading.Thread(target=_destroy_container, args=(cid,), daemon=True).start()
 
+        # Purge stale bootstrap tokens that were never consumed
+        with _tokens_lock:
+            stale = [t for t, exp in _bootstrap_tokens.items() if now > exp]
+            for t in stale:
+                del _bootstrap_tokens[t]
+
 
 threading.Thread(target=_cleanup_loop, daemon=True).start()
 
@@ -66,16 +81,33 @@ def _launch_container(github_user: str, port: int, session_token: str) -> str:
     except docker.errors.NotFound:
         dc.volumes.create(vol)
 
+    # One-time token the container exchanges for the real key over the internal network.
+    # The key itself never enters the student container's environment.
+    boot_token = secrets.token_urlsafe(32)
+    with _tokens_lock:
+        _bootstrap_tokens[boot_token] = time.time() + BOOTSTRAP_TTL
+
     c = dc.containers.run(
         NOVNC_IMAGE,
         name=f"cc-{session_token[:12]}",
         detach=True,
         ports={"6080/tcp": ("0.0.0.0", port)},
-        environment={"VNC_PASSWORD": VNC_PASSWORD, "CHIPCRAFT_KEY": CHIPCRAFT_KEY},
+        environment={
+            "VNC_PASSWORD":     VNC_PASSWORD,
+            "BOOTSTRAP_TOKEN":  boot_token,
+            "API_INTERNAL_URL": "http://api:8000",
+            # ~/lab is where _clone_repo puts the student's git repo
+            "WORK_DIR":         "/home/ubuntu/lab",
+            "LAB_DIR":          "/home/ubuntu/labs",
+        },
         volumes={
             SHARED_PATH: {"bind": "/home/ubuntu/shared", "mode": "ro"},
             vol:         {"bind": "/home/ubuntu/work",   "mode": "rw"},
         },
+        # Decrypted .v files live in RAM only — never touch disk
+        tmpfs={"/home/ubuntu/labs": "size=100m,uid=1000,gid=1000,mode=0700"},
+        # Join the compose network so the container can reach http://api:8000
+        network=COMPOSE_NETWORK,
     )
     return c.id
 
@@ -335,6 +367,35 @@ async def launch(request: Request, session: str = Cookie(default=None)):
         ).start()
 
     return RedirectResponse(_desktop_url(port, request))
+
+
+class _KeyRequest(BaseModel):
+    token: str
+
+
+@app.post("/lab-key")
+async def lab_key(request: Request, body: _KeyRequest):
+    """Internal-only endpoint: exchanges a one-time bootstrap token for the lab key.
+    Reachable only from within the Docker network (not from students' browsers)."""
+    client_ip = request.client.host
+
+    # Accept only Docker-internal addresses; reject anything that came from outside.
+    _internal = ("172.", "10.", "192.168.", "127.")
+    if not any(client_ip.startswith(p) for p in _internal):
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    now = time.time()
+    with _tokens_lock:
+        expiry = _bootstrap_tokens.pop(body.token, None)   # single-use: consumed here
+
+    if expiry is None or now > expiry:
+        raise HTTPException(status_code=401, detail="invalid or expired token")
+
+    if not CHIPCRAFT_KEY:
+        raise HTTPException(status_code=503, detail="key not configured on server")
+
+    print(f"lab-key issued to {client_ip}", flush=True)
+    return {"key": CHIPCRAFT_KEY}
 
 
 @app.get("/ping")

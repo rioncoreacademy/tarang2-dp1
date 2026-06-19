@@ -1,0 +1,10 @@
+# Never commit plaintext Verilog — only encrypted files go to GitHub
+*.v
+
+# Encrypted Verilog files ARE tracked
+!*.v.enc
+
+# Simulation outputs — generated locally, not committed
+*.vcd
+*.vvp
+obj_dir/

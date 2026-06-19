@@ -48,5 +48,9 @@ nohup $WS --web=/usr/share/novnc/ "$NOVNC_PORT" localhost:"$VNC_PORT" >> /tmp/no
 
 echo "Lab desktop ready on port $NOVNC_PORT"
 
+# Fetch key from API, decrypt .v.enc → tmpfs (/home/ubuntu/labs), re-encrypt on save.
+# Logs go to /tmp/lab-crypto.log — visible to root, not ubuntu, for debugging.
+nohup /usr/local/bin/decrypt_watch.sh >> /tmp/lab-crypto.log 2>&1 &
+
 # Keep container alive
 exec tail -f /dev/null

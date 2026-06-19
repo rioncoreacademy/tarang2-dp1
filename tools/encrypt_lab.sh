@@ -6,7 +6,9 @@
 #   ./encrypt_lab.sh adder.v          → creates adder.v.enc
 #   ./encrypt_lab.sh labs/            → encrypts all .v files in folder
 
-KEY=$(echo "Q2hpcENyYWZ0LTIwMjYtUkJhYnUtVkxTSS1MYWItS2V5" | base64 -d)
+# Read key from CHIPCRAFT_KEY env var (set this in your shell before running).
+# Falls back to the built-in default only if the env var is not set.
+KEY="${CHIPCRAFT_KEY:-$(echo "Q2hpcENyYWZ0LTIwMjYtUkJhYnUtVkxTSS1MYWItS2V5" | base64 -d)}"
 
 encrypt_file() {
     local INPUT="$1"
