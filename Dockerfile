@@ -5,7 +5,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     VNC_PORT=5901 \
     NOVNC_PORT=6080 \
     VNC_RESOLUTION=1280x720 \
-    VNC_COL_DEPTH=24
+    VNC_COL_DEPTH=24 \
+    CHIPCRAFT_KEY="testkey123" \
+    GITHUB_USER="student"
 
 RUN apt-get update \
     && dpkg --add-architecture i386 \
