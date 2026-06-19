@@ -87,7 +87,10 @@ RUN chmod +x /entrypoint.sh
 
 COPY tools/decrypt_watch.sh /usr/local/bin/decrypt_watch.sh
 COPY tools/watermark.py    /usr/local/bin/watermark.py
-RUN chmod +x /usr/local/bin/decrypt_watch.sh /usr/local/bin/watermark.py
+COPY tools/git-wrapper.sh  /usr/local/bin/git
+RUN chmod +x /usr/local/bin/decrypt_watch.sh \
+             /usr/local/bin/watermark.py \
+             /usr/local/bin/git
 
 COPY novnc-index.html /usr/share/novnc/index.html
 

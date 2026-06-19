@@ -1,0 +1,28 @@
+#!/bin/bash
+# Git wrapper — restricts git usage to ~/lab/ only.
+# Students cannot git init, git clone, or git push decrypted files anywhere.
+
+REAL_GIT=/usr/bin/git
+CMD="${1:-}"
+LAB_DIR="$HOME/lab"
+
+case "$CMD" in
+    init)
+        echo "[ChipCraft] git init is not allowed in this lab." >&2
+        exit 1
+        ;;
+    clone)
+        echo "[ChipCraft] git clone is not allowed in this lab." >&2
+        exit 1
+        ;;
+    push|commit|add)
+        # Only allow git add/commit/push from inside ~/lab/
+        CURRENT="$(pwd)"
+        if [[ "$CURRENT" != "$LAB_DIR" && "$CURRENT" != "$LAB_DIR/"* ]]; then
+            echo "[ChipCraft] git is only allowed inside ~/lab/." >&2
+            exit 1
+        fi
+        ;;
+esac
+
+exec "$REAL_GIT" "$@"
