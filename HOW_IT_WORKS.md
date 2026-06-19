@@ -11,54 +11,76 @@ inside the container, but they cannot extract the plaintext or the encryption ke
 
 ---
 
+## GitHub Repositories
+
+| Repo | URL | Purpose |
+|---|---|---|
+| `chipcraft-lab` | github.com/narrave/chipcraft-lab | Infrastructure — Dockerfile, API, entrypoint, tools |
+| `chipcraft-lab-files` | github.com/narrave/chipcraft-lab-files | Lab files — encrypted `.v.enc` files + Makefile |
+| `chipcraft-student` | github.com/narrave/chipcraft-student | VS Code Codespace launch only (devcontainer) |
+
+> **`chipcraft-lab-files` is the template repo.** The API forks it into each student's
+> GitHub account when they log in. Students clone their own fork and push encrypted
+> work back to it.
+
+---
+
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  TEACHER'S PC                                                       │
-│                                                                     │
-│  counter.v  ──encrypt──►  counter.v.enc  ──push──►  GitHub Repo   │
-│  (private)    encrypt_lab.sh   (safe to share)                     │
-└─────────────────────────────────────────────────────────────────────┘
-                                                          │
-                                                    git clone (fork)
-                                                          │
-┌─────────────────────────────────────────────────────────────────────┐
-│  SERVER  (docker compose up)                                        │
-│                                                                     │
-│  ┌──────────────┐        ┌──────────────────────────────────────┐  │
-│  │  API Service │        │  Student Container (per student)     │  │
-│  │  port 80     │        │                                      │  │
-│  │              │        │  ~/lab/          (git clone, rw)     │  │
-│  │  CHIPCRAFT   │◄──────►│    counter.v.enc                     │  │
-│  │  _KEY in     │one-time│                                      │  │
-│  │  memory only │ token  │  ~/labs/         (tmpfs, RAM only)   │  │
-│  │              │        │    counter.v     ← student edits     │  │
-│  │  GitHub      │        │    Makefile                          │  │
-│  │  OAuth login │        │                                      │  │
-│  └──────────────┘        │  Browser VNC desktop (noVNC:6080)   │  │
-│                           └──────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-                              Student's browser
-                         (sees XFCE desktop via noVNC)
+┌──────────────────────────────────────────────────────────────────────────┐
+│  TEACHER'S PC                                                            │
+│                                                                          │
+│  counter.v  ──encrypt──►  counter.v.enc  ──push──►  chipcraft-lab-files │
+│  (private)    encrypt_lab.sh   (safe to share)      github.com/narrave   │
+└──────────────────────────────────────────────────────────────────────────┘
+                                                              │
+                                              API forks repo per student
+                                              Student's fork cloned → ~/lab/
+                                                              │
+┌──────────────────────────────────────────────────────────────────────────┐
+│  SERVER  (docker compose up)                                             │
+│                                                                          │
+│  ┌──────────────┐        ┌───────────────────────────────────────────┐  │
+│  │  API Service │        │  Student Container (one per student)      │  │
+│  │  port 80     │        │                                           │  │
+│  │              │        │  ~/lab/            (student's git fork)   │  │
+│  │  CHIPCRAFT   │◄──────►│    counter.v.enc   ← re-encrypted on save │  │
+│  │  _KEY in     │one-time│    tb_counter.v.enc                       │  │
+│  │  memory only │ token  │    Makefile                               │  │
+│  │              │        │                                           │  │
+│  │  GitHub      │        │  ~/labs/           (tmpfs — RAM only)     │  │
+│  │  OAuth login │        │    counter.v       ← student edits here   │  │
+│  └──────────────┘        │    tb_counter.v                           │  │
+│                           │    Makefile                               │  │
+│                           │                                           │  │
+│                           │  Browser VNC desktop (noVNC port 6080)   │  │
+│                           └───────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                 Student's browser
+                          (sees XFCE desktop via noVNC)
 ```
 
 ---
 
 ## Components
 
-| File / Service | Role |
-|---|---|
-| `tools/encrypt_lab.sh` | Teacher runs this on their PC to encrypt `.v` files |
-| `tools/decrypt_watch.sh` | Runs inside container — decrypts on startup, re-encrypts on save |
-| `tools/watermark.py` | Embeds/reads invisible trailing-space watermark in `.v` files |
-| `tools/detect_leak.sh` | Teacher tool — identifies which student a leaked file came from |
-| `api/main.py` | FastAPI service — GitHub OAuth, container launch, key delivery |
-| `router/app.py` | Simple load balancer across student containers |
-| `Dockerfile` | Builds the student desktop image (XFCE + VNC + Verilator + iverilog) |
-| `entrypoint.sh` | Container startup — starts VNC, noVNC, egress firewall, decrypt_watch |
-| `.env` | Server-side secrets (never committed, never shared) |
+| File / Service | Repo | Role |
+|---|---|---|
+| `tools/encrypt_lab.sh` | chipcraft-lab | Teacher encrypts `.v` files on their PC |
+| `tools/decrypt_watch.sh` | chipcraft-lab | Container — decrypts on startup, re-encrypts on save |
+| `tools/watermark.py` | chipcraft-lab | Embeds / reads invisible trailing-space watermark |
+| `tools/detect_leak.sh` | chipcraft-lab | Teacher tool — identifies student from a leaked file |
+| `api/main.py` | chipcraft-lab | FastAPI — GitHub OAuth, container launch, key delivery |
+| `router/app.py` | chipcraft-lab | Load balancer across student containers |
+| `Dockerfile` | chipcraft-lab | Builds student desktop image (XFCE + VNC + Verilator) |
+| `entrypoint.sh` | chipcraft-lab | Container startup — VNC, firewall, decrypt_watch |
+| `docker-compose.yml` | chipcraft-lab | Defines API service and build targets |
+| `.env` | server only | Server-side secrets — never committed |
+| `*.v.enc` | chipcraft-lab-files | Encrypted Verilog lab files |
+| `Makefile` | chipcraft-lab-files | `make` / `make wave` / `make clean` |
+| `.gitignore` | chipcraft-lab-files | Blocks `*.v`, allows `*.v.enc` |
 
 ---
 
@@ -66,60 +88,76 @@ inside the container, but they cannot extract the plaintext or the encryption ke
 
 ### The Key
 
-The encryption key is an AES-256 passphrase set by the teacher.  
+The encryption key is an AES-256 passphrase set by the teacher.
 It lives in **two places only**:
 
-1. The teacher's terminal (as `CHIPCRAFT_KEY` env var) when encrypting
-2. The server's `.env` file (so the API can deliver it to containers)
+1. The teacher's terminal (`CHIPCRAFT_KEY` env var) when encrypting
+2. The server's `.env` file (so the API can deliver it to containers at runtime)
 
 It is **never** stored in:
 - The Docker image
-- The GitHub repository
+- Any GitHub repository
 - The student container's environment
 
 ### Encrypting Files
 
 ```bash
 # On teacher's PC (Git Bash / WSL / Mac / Linux)
-
 export CHIPCRAFT_KEY="your-secret-key"
 
 # Encrypt a single file
 bash NVR/tools/encrypt_lab.sh counter.v
 # → counter.v.enc
 
-# Encrypt all .v files in a folder
-bash NVR/tools/encrypt_lab.sh NVR/chipcraft-student/
-# → creates .v.enc for every .v file
+# Encrypt all .v files in a folder at once
+bash NVR/tools/encrypt_lab.sh labs/
+# → creates .v.enc for every .v file in that folder
 ```
 
-`encrypt_lab.sh` uses **AES-256-CBC with PBKDF2** (via openssl):
+`encrypt_lab.sh` uses **AES-256-CBC with PBKDF2** (openssl):
 
 ```
 openssl enc -aes-256-cbc -pbkdf2 -salt -k "$KEY" -in counter.v -out counter.v.enc
 ```
 
-### Pushing to GitHub
+### Pushing Encrypted Files to chipcraft-lab-files
 
-Only encrypted files go to GitHub. The `.gitignore` in `chipcraft-student/` ensures this:
+Only encrypted files go to GitHub. The `.gitignore` blocks plaintext:
 
 ```
-*.v        ← blocked (plaintext, never committed)
-!*.v.enc   ← allowed (encrypted, safe to share)
+*.v        ← blocked  (plaintext — never committed)
+!*.v.enc   ← allowed  (encrypted — safe to share)
 ```
 
 ```bash
-cd NVR/chipcraft-student
-git add *.v.enc Makefile .gitignore
+cd chipcraft-lab-files
+
+# Copy encrypted files here, then push
+cp ../labs/*.v.enc .
+git add *.v.enc
 git commit -m "lab1: counter"
 git push
+# → github.com/narrave/chipcraft-lab-files now has counter.v.enc
+```
+
+### Adding More Lab Files Later
+
+```bash
+cd chipcraft-lab-files
+
+bash ../NVR/tools/encrypt_lab.sh adder.v   # → adder.v.enc
+rm adder.v                                 # never commit plaintext
+git add adder.v.enc
+git commit -m "lab2: adder"
+git push
+# Students get the new file on their next container restart
 ```
 
 ---
 
 ## Key Delivery — How the Container Gets the Key
 
-The key never travels directly to the student container.  
+The key never travels directly to the student container.
 It is delivered via a **one-time bootstrap token** over the internal Docker network.
 
 ### Step-by-step
@@ -131,30 +169,33 @@ It is delivered via a **one-time bootstrap token** over the internal Docker netw
             │
 3. Student logs in via GitHub OAuth
             │
-4. API generates a BOOTSTRAP_TOKEN  (32 random bytes, expires in 30 seconds)
+4. API forks chipcraft-lab-files → student's GitHub account
+   API clones student's fork    → ~/lab/ inside the container
             │
-5. API launches student container with BOOTSTRAP_TOKEN in its environment
-   (CHIPCRAFT_KEY is NOT passed to the container)
+5. API generates BOOTSTRAP_TOKEN (32 random bytes, expires in 30 seconds)
+   API launches student container with BOOTSTRAP_TOKEN in its environment
+   (CHIPCRAFT_KEY is NOT passed to the student container)
             │
 6. Container starts → decrypt_watch.sh runs immediately
             │
 7. decrypt_watch.sh calls:
-   POST http://api:8000/lab-key   { "token": "<BOOTSTRAP_TOKEN>" }
+   POST http://api:8000/lab-key  { "token": "<BOOTSTRAP_TOKEN>" }
    (over internal Docker network — not reachable from student's browser)
             │
 8. API validates the token:
    - Is the caller on the internal Docker network? (IP check)
    - Is the token valid and not expired?
-   - Marks the token as used (single-use — works only once)
+   - Marks the token as consumed (single-use — works only once)
             │
 9. API returns CHIPCRAFT_KEY in the response
             │
 10. decrypt_watch.sh stores the key in a bash variable
     BOOTSTRAP_TOKEN is immediately unset from the environment
             │
-11. openssl decrypts counter.v.enc → counter.v  (into tmpfs RAM)
+11. openssl decrypts ~/lab/counter.v.enc → ~/labs/counter.v  (tmpfs RAM)
+    Invisible watermark embedded in the decrypted file
             │
-12. Student opens ~/labs/counter.v  — sees plain Verilog
+12. Student opens ~/labs/counter.v — sees plain Verilog, starts working
 ```
 
 ### Why students cannot steal the key
@@ -162,9 +203,9 @@ It is delivered via a **one-time bootstrap token** over the internal Docker netw
 | Attack | Blocked because |
 |---|---|
 | `env` in terminal | `BOOTSTRAP_TOKEN` already consumed and unset; `CHIPCRAFT_KEY` was never there |
-| `curl http://api:8000/lab-key` from terminal | Token is already used (single-use); a new call returns 401 |
-| Copy `.v.enc` file home and decrypt | They don't have the key |
-| Read `.env` file | It's on the server — not inside the container |
+| `curl http://api:8000/lab-key` | Token already used — returns 401 |
+| Copy `.v.enc` file and decrypt | They don't have the key |
+| Read `.env` file | On the server — not inside the container |
 | `docker inspect api` | Requires Docker daemon access — students don't have it |
 
 ---
@@ -176,12 +217,14 @@ It is delivered via a **one-time bootstrap token** over the internal Docker netw
 ### On container startup
 
 ```
-~/lab/counter.v.enc   (git clone)
+~/lab/counter.v.enc       (student's forked git repo, cloned by API)
          │
          │  openssl dec -k "$KEY"
+         │  watermark.py encode "@github_user"
          ▼
-~/labs/counter.v      (tmpfs — RAM only, never touches disk)
-~/labs/Makefile       (copied from ~/lab/)
+~/labs/counter.v          (tmpfs — RAM only, never touches disk)
+~/labs/tb_counter.v
+~/labs/Makefile           (copied from ~/lab/)
 ```
 
 ### On every student save
@@ -194,13 +237,11 @@ Student saves ~/labs/counter.v
 openssl enc -k "$KEY"
          │
          ▼
-~/lab/counter.v.enc   (updated on the persistent volume)
+~/lab/counter.v.enc       (updated in student's forked repo)
+         │
+         ▼
+cd ~/lab && git push      (student saves encrypted work to their GitHub fork)
 ```
-
-This means:
-- The student edits **decrypted** `.v` files normally
-- The **encrypted** `.v.enc` files are always kept up to date automatically
-- If the container restarts, files are re-decrypted from the `.v.enc` backup
 
 ### tmpfs — why it matters
 
@@ -210,49 +251,27 @@ This means:
 - When the container stops, they vanish automatically
 - No plaintext is ever written to the host disk or the Docker volume
 
-### Which files get re-encrypted on save — and from where?
+### Which files get re-encrypted on save
 
-`decrypt_watch.sh` watches the **entire home directory** (`~/`) recursively.
-This means a student can save or edit a lab file from **any folder** and
-re-encryption still triggers automatically.
+`decrypt_watch.sh` watches the **entire home directory** recursively.
+A `.v` file is **only re-encrypted if a matching `.v.enc` already exists in `~/lab/`**.
+Student-created files and files from other sources are left as plain `.v`.
 
-> **A `.v` file is re-encrypted only if a matching `.v.enc` already exists in `~/lab/`.**
-
-This means student-created files and files copied from other sources are
-**never encrypted** — they are saved as plain `.v` files and left alone.
-
-| File saved (any location) | `~/lab/*.v.enc` exists? | Action |
+| File saved | `~/lab/*.v.enc` exists? | Action |
 |---|---|---|
 | `counter.v` (teacher lab file) | Yes | Re-encrypted → `~/lab/counter.v.enc` ✓ |
 | `tb_counter.v` (teacher lab file) | Yes | Re-encrypted → `~/lab/tb_counter.v.enc` ✓ |
-| `my_adder.v` (student's own file) | No | Left as plain `.v` — no encryption ✓ |
-| `copied_example.v` (from internet) | No | Left as plain `.v` — no encryption ✓ |
-
-```
-# Re-encryption triggered regardless of where the student saves from:
-vim ~/labs/counter.v          → re-encrypted ✓   (saved inside ~/labs/)
-vim ~/counter.v               → re-encrypted ✓   (saved in home dir)
-cp ~/labs/counter.v ~/work/counter.v
-vim ~/work/counter.v          → re-encrypted ✓   (saved in ~/work/)
-
-# Student's own files — never encrypted, wherever they are:
-vim ~/labs/my_adder.v         → plain .v, skipped ✓
-vim ~/my_adder.v              → plain .v, skipped ✓
-```
+| `my_adder.v` (student's own file) | No | Left as plain `.v` — not encrypted ✓ |
+| `copied_example.v` (from internet) | No | Left as plain `.v` — not encrypted ✓ |
 
 ### Compiling from any folder
 
-The `Makefile` automatically finds `.v` files in `~/labs/` regardless of
-which directory the student's terminal is in:
-
 ```bash
-# All of these work identically
-cd ~/labs  && make
-cd ~       && make -f ~/labs/Makefile
-cd ~/work  && make -f ~/labs/Makefile
-
-# Or point to a different folder
-make LABS=~/myfolder
+cd ~/labs && make              # compile + simulate
+cd ~      && make              # also works — Makefile finds ~/labs/ automatically
+make wave                      # compile + simulate + open GTKWave
+make clean                     # remove sim.vvp and .vcd files
+make LABS=~/myfolder           # point to a different folder
 ```
 
 ---
@@ -266,11 +285,12 @@ Student visits the lab URL → clicks **Login with GitHub** → OAuth → portal
 ### 2. Launch Lab
 
 Clicks **Launch ChipCraft Lab**:
-- API forks the template repo into the student's GitHub account
-- Launches a personal container
+- API forks `chipcraft-lab-files` into the student's GitHub account
+- Launches a personal container and clones the student's fork into `~/lab/`
 - Redirects to the XFCE desktop in the browser (noVNC)
+- `decrypt_watch.sh` decrypts lab files into `~/labs/` (RAM)
 
-### 3. Compile and Simulate
+### 3. Edit and Compile
 
 Student opens **XFCE Terminal**:
 
@@ -287,8 +307,7 @@ What `make` does internally:
 ```bash
 iverilog -g2012 -Wall -o sim.vvp tb_counter.v counter.v
 vvp sim.vvp
-# → prints simulation output
-# → writes counter.vcd
+# → prints simulation output + writes counter.vcd
 gtkwave counter.vcd   # (make wave only)
 ```
 
@@ -297,9 +316,9 @@ gtkwave counter.vcd   # (make wave only)
 ```bash
 cd ~/lab
 git add *.v.enc
-git commit -m "my solution"
+git commit -m "lab1 solution"
 git push
-# ✓ Work saved — only encrypted files go to GitHub
+# ✓ Encrypted work saved to student's personal fork on GitHub
 ```
 
 ---
@@ -314,8 +333,7 @@ CHIPCRAFT_KEY=your-secret-key-here
 GH_CLIENT_ID=your_github_oauth_app_id
 GH_CLIENT_SECRET=your_github_oauth_secret
 VNC_PASSWORD=novnc
-SHARED_PATH=/data/workspace/project
-TEMPLATE_REPO=your-github-username/chipcraft-student
+TEMPLATE_REPO=narrave/chipcraft-lab-files
 SESSION_TTL=14400
 PORT_START=6081
 PORT_END=6180
@@ -329,11 +347,21 @@ docker compose build   # builds ubuntu-novnc:latest image
 docker compose up -d   # starts the API service
 ```
 
-### 3. Add lab files
+### 3. Push encrypted lab files
 
 ```bash
-# Encrypt on your PC, push to GitHub (see Encryption section above)
-# The API will fork + clone the repo automatically for each student
+# Encrypt on your PC
+export CHIPCRAFT_KEY="your-secret-key-here"
+bash NVR/tools/encrypt_lab.sh counter.v     # → counter.v.enc
+bash NVR/tools/encrypt_lab.sh tb_counter.v  # → tb_counter.v.enc
+
+# Push to chipcraft-lab-files
+cd chipcraft-lab-files
+cp ../counter.v.enc ../tb_counter.v.enc .
+git add *.v.enc
+git commit -m "lab1: counter"
+git push
+# Students now get these files automatically on their next login
 ```
 
 ---
@@ -342,80 +370,92 @@ docker compose up -d   # starts the API service
 
 ```
 /home/ubuntu/
-├── lab/                  ← git clone of student's forked repo (persistent volume)
-│   ├── counter.v.enc     ← encrypted (updated on every student save)
+│
+├── lab/                   ← student's forked git repo (persistent Docker volume)
+│   ├── counter.v.enc      ← re-encrypted on every student save
 │   ├── tb_counter.v.enc
 │   ├── Makefile
 │   └── .gitignore
 │
-├── labs/                 ← tmpfs (RAM only — cleared on container stop)
-│   ├── counter.v         ← decrypted, student edits here
-│   ├── tb_counter.v
-│   ├── Makefile          ← copied from ~/lab at startup
-│   ├── sim.vvp           ← generated by iverilog
-│   └── counter.vcd       ← generated by simulation, opened in GTKWave
-│
-└── shared/               ← read-only mount from server (fallback source)
-    └── *.v.enc
+└── labs/                  ← tmpfs (RAM only — vanishes when container stops)
+    ├── counter.v          ← decrypted, watermarked — student edits here
+    ├── tb_counter.v
+    ├── Makefile           ← copied from ~/lab/ at startup
+    ├── sim.vvp            ← generated by iverilog
+    └── counter.vcd        ← generated by simulation, opened in GTKWave
 ```
 
 ---
 
 ## File Exfiltration — Possible Attack Paths
 
-Even with decryption protection, a student who can see and run the file might
-try to copy the plaintext out of the container. Here is every known method and
-whether it is blocked:
-
 | Attack method | Blocked? | How |
 |---|---|---|
-| **noVNC clipboard** — copy text from editor via the clipboard button | ✅ Blocked | `-noclipboard` flag on vncserver |
+| **noVNC clipboard** — copy text via the clipboard button | ✅ Blocked | `-noclipboard` on vncserver |
 | **git push decrypted files** from `~/labs/` | ✅ Blocked | No `.git` in `~/labs/`; `*.v` in `.gitignore` |
-| **curl / wget** to paste sites (HTTP/HTTPS) | ✅ Blocked | Egress firewall — only GitHub IPs allowed |
-| **Browser inside VNC** → Google Drive, email, upload | ✅ Blocked | Egress firewall |
+| **curl / wget** to paste sites | ✅ Blocked | Egress firewall — only GitHub IPs allowed |
+| **Browser inside VNC** → Google Drive, email | ✅ Blocked | Egress firewall |
 | **docker cp** from host | Admin only | Requires Docker daemon access — students don't have it |
 | **Phone photo / screen recording** | ❌ Cannot block | Watermark identifies the student |
-| **Manual typing** the code out | ❌ Cannot block | Watermark + academic integrity policy |
+| **Manual typing** the code | ❌ Cannot block | Watermark + academic integrity policy |
 
 ---
 
 ## Watermarking — Tracing Leaked Files
 
-Every decrypted `.v` file receives two watermarks:
+Every decrypted `.v` file receives two watermarks automatically.
+The student's GitHub username (from `GITHUB_USER` env var set by the API) is
+embedded uniquely per container — no manual step needed.
 
 ### Visible watermark (decoy)
-A comment at the top of the file — obvious, easy to delete:
+
+A Verilog comment at the top — easy to spot and delete:
 ```verilog
 // [ChipCraft] Student: @john_student | 2026-06-19
 module counter #( ...
 ```
 
 ### Invisible watermark (real trap)
+
 The student's GitHub username is encoded as **binary bits into trailing spaces**
-on each line — completely invisible to readers and editors:
+on each line — completely invisible to readers and most editors:
 
 ```
-module counter #(·      ← trailing space = bit 1
+module counter #(·      ← trailing space  = bit 1
     parameter WIDTH = 4 ← no trailing space = bit 0
-)(·                     ← trailing space = bit 1
-    ...                 ← encodes "john_student" across all lines
+)(·                     ← trailing space  = bit 1
+    ...                 ← encodes "john_student" in binary across all lines
 ```
 
-When the student deletes the visible comment thinking the watermark is gone,
-the invisible one is still present. It survives copy-paste, editor saves,
-and sharing the file online.
+When the student deletes the visible comment line thinking the watermark is removed,
+the invisible one is still present. It survives copy-paste, saves, and online sharing.
 
-### How to detect a leaked file (teacher)
+### How watermarks are applied per student
+
+```
+Student A logs in                    Student B logs in
+API sets GITHUB_USER=alice           API sets GITHUB_USER=bob
+        │                                    │
+        ▼                                    ▼
+watermark.py encode "alice"          watermark.py encode "bob"
+        │                                    │
+        ▼                                    ▼
+~/labs/counter.v                     ~/labs/counter.v
+// [ChipCraft] @alice | ...          // [ChipCraft] @bob | ...
+module counter #(·  ← alice bits    module counter #(   ← bob bits
+```
+
+### How to detect a leaked file (teacher tool)
 
 ```bash
-# On teacher's PC — works on plain .v or encrypted .v.enc files
+# Works on plaintext .v or encrypted .v.enc
 export CHIPCRAFT_KEY="your-secret-key"
 
-bash tools/detect_leak.sh leaked_counter.v
+bash NVR/tools/detect_leak.sh leaked_counter.v
 # → Leaked file : leaked_counter.v
 # → Student     : @john_student
 
-bash tools/detect_leak.sh counter.v.enc   # auto-decrypts first
+bash NVR/tools/detect_leak.sh counter.v.enc    # auto-decrypts first
 # → Leaked file : counter.v.enc
 # → Student     : @john_student
 ```
@@ -424,22 +464,22 @@ bash tools/detect_leak.sh counter.v.enc   # auto-decrypts first
 
 ## Egress Firewall
 
-Each student container starts with iptables rules that block all outbound
-internet traffic except what the lab needs:
+Each student container starts with iptables rules blocking all outbound traffic
+except what the lab needs:
 
 ```
 ALLOWED outbound:
   ├── Loopback (127.0.0.1)
-  ├── Docker internal network (172.x, 10.x)  ← for API key delivery
+  ├── Docker internal network (172.x, 10.x)   ← API key delivery
   ├── DNS (port 53)
-  └── GitHub IP ranges (port 443 / 22)       ← for git push only
+  └── GitHub IP ranges (port 443 / 22)        ← git push / git clone only
 
 BLOCKED outbound:
   └── Everything else — paste sites, email, file sharing, cloud storage
 ```
 
-Students can still `git push` their encrypted work to their GitHub repo,
-but cannot upload the decrypted `.v` files to any external service.
+Students can `git push` encrypted work to their GitHub fork but cannot upload
+decrypted `.v` files to any external service.
 
 ---
 
@@ -447,18 +487,18 @@ but cannot upload the decrypted `.v` files to any external service.
 
 ```
 CHIPCRAFT_KEY journey:
-  .env (server, teacher-only access)
-    → API container memory only
-      → POST /lab-key (internal Docker network, one-time token, 30s TTL)
+  .env (server — teacher access only)
+    → API container memory
+      → POST /lab-key (internal network, one-time token, 30s TTL)
         → bash variable in decrypt_watch.sh (~2 seconds)
           → openssl stdin  →  GONE
 
 Decrypted .v files:
-  ~/labs/ (tmpfs, RAM only)  →  watermarked  →  GONE when container stops
+  ~/labs/ (tmpfs, RAM only)  →  watermarked per student  →  GONE when container stops
 
 Encrypted .v.enc files:
-  GitHub + ~/lab/ volume  →  safe to store anywhere  →  useless without key
+  chipcraft-lab-files repo + ~/lab/ volume  →  safe anywhere  →  useless without key
 
 If a file leaks:
-  tools/detect_leak.sh  →  reads invisible trailing-space watermark  →  names the student
+  detect_leak.sh  →  reads invisible trailing-space watermark  →  names the student
 ```
