@@ -57,7 +57,7 @@ fi
 # Strip \r and \n — Codespace secrets can include hidden trailing line endings.
 if [[ -z "$KEY" && -n "${CHIPCRAFT_KEY:-}" ]]; then
     echo "[lab] Using CHIPCRAFT_KEY from environment (Codespace secret)." >&2
-    KEY="$(printf '%s' "$CHIPCRAFT_KEY" | tr -d '\r\n')"
+    KEY="$(printf '%s' "$CHIPCRAFT_KEY" | tr -d '\r\n ')"
 fi
 
 # Fallback 2: LAB_KEY env var — for local development/testing only.
