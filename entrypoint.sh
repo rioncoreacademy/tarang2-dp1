@@ -36,7 +36,9 @@ mkdir -p "$HOME/.vnc" /tmp/runtime-ubuntu
 chmod 700 /tmp/runtime-ubuntu
 touch "$HOME/.Xresources"
 
-printf '%s' "$VNC_PASSWORD" | vncpasswd -f > "$HOME/.vnc/passwd"
+# TigerVNC vncpasswd expects password entered twice (password + confirm).
+# The -f flag writes the encrypted result to stdout.
+printf '%s\n%s\n' "$VNC_PASSWORD" "$VNC_PASSWORD" | vncpasswd -f > "$HOME/.vnc/passwd"
 chmod 600 "$HOME/.vnc/passwd"
 
 cat > "$HOME/.vnc/xstartup" <<'EOF'
@@ -47,11 +49,16 @@ exec dbus-launch --exit-with-session startxfce4
 EOF
 chmod +x "$HOME/.vnc/xstartup"
 
-# Start VNC — NeverShared + no clipboard sync to/from noVNC client
-# -localhost no  : TigerVNC defaults to localhost-only; websockify needs to reach it
-# -noclipboard   : TigerVNC flag — blocks clipboard sync between container and browser
+# Start VNC — TigerVNC flags:
+# -localhost no      : accept connections from websockify (not loopback-only)
+# -SecurityTypes VncAuth : explicitly require password auth (needed with -localhost no)
+# -PasswordFile      : path to the passwd file created above
+# -noclipboard       : block clipboard sync between container and browser
 vncserver :1 -geometry "$VNC_GEOMETRY" -depth "$VNC_DEPTH" -rfbport "$VNC_PORT" \
-    -localhost no -noclipboard
+    -localhost no \
+    -SecurityTypes VncAuth \
+    -PasswordFile "$HOME/.vnc/passwd" \
+    -noclipboard
 
 # Wait for VNC to be ready
 for i in $(seq 1 15); do
