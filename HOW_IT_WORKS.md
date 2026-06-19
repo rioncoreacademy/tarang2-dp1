@@ -323,6 +323,93 @@ git push
 
 ---
 
+## Deployment Options
+
+There are two ways to run ChipCraft. Choose based on your needs:
+
+| | Codespace Mode | Server Mode |
+|---|---|---|
+| **What runs where** | Student's own Codespace | VPS / cloud server |
+| **Cost** | Free (GitHub Codespaces) | ~$4-6/month |
+| **Key visible to students?** | ⚠️ Yes — in `$CHIPCRAFT_KEY` env var | ✅ No — never in student env |
+| **Setup time** | 5 minutes | 30 minutes |
+| **Best for** | Quick testing, small classes | Real lab with security |
+| **Students use** | VS Code in browser | noVNC desktop in browser |
+
+---
+
+## Codespace Mode (Simple Setup)
+
+Students open the `chipcraft-student` repo in a GitHub Codespace.
+Everything is set up automatically by `.devcontainer/setup.sh`.
+
+### How it works
+
+```
+1. Teacher sets CHIPCRAFT_KEY as a Codespace Secret
+   github.com/settings/codespaces → Secrets → New secret
+   Name: CHIPCRAFT_KEY   Value: your-key   Repo: chipcraft-student
+
+2. Student opens chipcraft-student in a Codespace
+   github.com/narrave/chipcraft-student → Code → Open in Codespace
+
+3. Codespace starts automatically:
+   ├── entrypoint.sh runs → starts Xvnc + XFCE desktop
+   ├── Port 6080 forwarded → student sees noVNC in browser
+   └── postStartCommand → .devcontainer/setup.sh runs:
+         ├── git clone chipcraft-lab-files → ~/lab/
+         ├── Strips hidden chars from CHIPCRAFT_KEY
+         ├── Kills failed decrypt_watch, restarts it
+         └── ~/labs/ filled with decrypted .v files
+
+4. Student opens terminal in the XFCE desktop:
+   cd ~/labs && make
+```
+
+### Security limitation
+
+```
+⚠️  Students CAN read the key:
+    echo $CHIPCRAFT_KEY   → prints the key
+
+    This is unavoidable in Codespace — secrets are env vars.
+    Security relies on:
+    ✓ Repo is private  → only invited students can open a Codespace
+    ✓ Watermarking     → leaked files are traced back to the student
+```
+
+### Codespace setup (teacher does once)
+
+```bash
+# 1. Set Codespace secret
+#    github.com/settings/codespaces → New secret
+#    Name: CHIPCRAFT_KEY  Value: testkey123  Repo: chipcraft-student
+
+# 2. Encrypt lab files with the same key
+export CHIPCRAFT_KEY="testkey123"
+bash NVR/tools/encrypt_lab.sh counter.v
+cp counter.v.enc chipcraft-lab-files/
+cd chipcraft-lab-files && git add *.v.enc && git commit -m "lab1" && git push
+
+# 3. Make chipcraft-lab-files PUBLIC (needed for Codespace to clone it)
+#    github.com/narrave/chipcraft-lab-files → Settings → Change visibility → Public
+
+# 4. Invite students to chipcraft-student repo as collaborators
+#    github.com/narrave/chipcraft-student → Settings → Collaborators
+```
+
+### Student steps (Codespace mode)
+
+```
+1. Open github.com/narrave/chipcraft-student
+2. Click Code → Open in Codespace
+3. Wait ~2 minutes for setup to complete
+4. Click the noVNC port (6080) in the Ports tab
+5. See XFCE desktop → open terminal → cd ~/labs && make
+```
+
+---
+
 ## Server Setup (Teacher)
 
 ### 1. Create `.env` on the server
