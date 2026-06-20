@@ -83,10 +83,11 @@ an environment variable in the container, so `docker inspect` reveals nothing us
 | `docker-compose.yml` | chipcraft-lab | Defines API service and build targets |
 | `.env` | server only | Server-side secrets — never committed |
 | `*.v.enc` | chipcraft-lab-files | Encrypted Verilog lab files |
-| `mywork/` | chipcraft-lab-files | Student-created `.v` files (tracked by git, not encrypted) |
+| `mywork/` | chipcraft-lab-files | Student-created work (only `.v.enc` files — auto-encrypted on save) |
 | `Makefile` | chipcraft-lab-files | `make` / `make wave` / `make clean` |
-| `.gitignore` | chipcraft-lab-files | Blocks `*.v`, allows `*.v.enc` and `mywork/*.v` |
-| `.devcontainer/setup.sh` | chipcraft-student | Codespace startup — clones lab, fetches key, starts decrypt |
+| `.gitignore` | chipcraft-lab-files | Blocks everything; only `*.enc` and repo infra files allowed |
+| `.devcontainer/setup.sh` | chipcraft-student | Codespace startup — clones lab, fetches key, starts decrypt, installs pre-commit hook |
+| `.devcontainer/hooks/pre-commit` | chipcraft-student | Git hook — blocks any non-`.enc` file from being committed |
 | `.devcontainer/devcontainer.json` | chipcraft-student | Codespace config — image, ports, postAttachCommand |
 
 ---
@@ -143,13 +144,13 @@ openssl enc -aes-256-cbc -pbkdf2 -salt -k "$KEY" -in counter.v -out counter.v.en
 
 ### Pushing Encrypted Files to chipcraft-lab-files
 
-Only encrypted files go to GitHub. The `.gitignore` blocks plaintext:
+Only encrypted files go to GitHub. The `.gitignore` blocks everything except `.enc` files:
 
 ```
-*.v          <- blocked  (plaintext — never committed)
-!*.v.enc     <- allowed  (encrypted — safe to share)
-!mywork/     <- allowed  (student-created files folder)
-!mywork/*.v  <- allowed  (student own .v files in mywork/)
+*            <- block everything by default
+!.gitignore  <- allow repo infrastructure
+!Makefile
+!*.enc       <- the only data files allowed are encrypted Verilog
 ```
 
 ```bash
@@ -317,17 +318,26 @@ export default {
 ### On every student save
 
 ```
-Student saves ~/labs/counter.v
+Student saves ~/labs/counter.v         (teacher lab file)
          |
          |  inotifywait detects close_write
          v
 openssl enc -k "$KEY"
          |
          v
-~/lab/counter.v.enc       (updated in student git repo)
+~/lab/counter.v.enc       (updated — matching .enc existed in ~/lab/)
+
+Student saves ~/labs/my_adder.v        (student new file)
+         |
+         |  inotifywait detects close_write
+         v
+openssl enc -k "$KEY"
          |
          v
-cd ~/lab && git push      (encrypted work saved to student GitHub fork)
+~/lab/mywork/my_adder.v.enc   (created in mywork/ — no prior .enc existed)
+         |
+         v
+cd ~/lab && git add mywork/my_adder.v.enc && git push
 ```
 
 ### tmpfs — why it matters
@@ -338,16 +348,16 @@ cd ~/lab && git push      (encrypted work saved to student GitHub fork)
 - When the container stops, they vanish automatically
 - No plaintext is ever written to the host disk or the Docker volume
 
-### Which files get re-encrypted on save
+### Which files get encrypted on save
 
-A `.v` file is re-encrypted only if a matching `.v.enc` already exists in `~/lab/`.
+Every `.v` file save is encrypted. Teacher files update their existing `.enc` in `~/lab/`; student-created new files are encrypted into `~/lab/mywork/`.
 
 | File saved | `~/lab/*.v.enc` exists? | Action |
 |---|---|---|
-| `counter.v` (teacher lab file) | Yes | Re-encrypted -> `~/lab/counter.v.enc` |
-| `tb_counter.v` (teacher lab file) | Yes | Re-encrypted -> `~/lab/tb_counter.v.enc` |
-| `~/lab/mywork/my_adder.v` (student file) | No | Left as plain `.v` — pushed via git |
-| `copied_example.v` (from internet) | No | Left as plain `.v` — not encrypted |
+| `counter.v` (teacher lab file) | Yes | Re-encrypted → `~/lab/counter.v.enc` |
+| `tb_counter.v` (teacher lab file) | Yes | Re-encrypted → `~/lab/tb_counter.v.enc` |
+| `my_adder.v` (student new file) | No | Encrypted → `~/lab/mywork/my_adder.v.enc` |
+| `seq_circuit.v` (student new file) | No | Encrypted → `~/lab/mywork/seq_circuit.v.enc` |
 
 ---
 
@@ -364,7 +374,10 @@ outside the lab repository.
 | `git init` | Anywhere | Blocked — `[ChipCraft] git init is not allowed in this lab.` |
 | `git clone` | Anywhere | Blocked — `[ChipCraft] git clone is not allowed in this lab.` |
 | `git add` / `git commit` / `git push` | Outside `~/lab/` | Blocked — `[ChipCraft] git is only allowed inside ~/lab/.` |
-| `git add` / `git commit` / `git push` | Inside `~/lab/` | Allowed — encrypted work lives here |
+| `git add counter.v` (plain `.v`) | Inside `~/lab/` | Silently ignored by `.gitignore` |
+| `git add -f counter.v` then `git commit` | Inside `~/lab/` | Blocked by pre-commit hook — `COMMIT BLOCKED: only .enc files may be added` |
+| `git add counter.v.enc` | Inside `~/lab/` | Allowed — encrypted file |
+| `git commit` / `git push` with only `.enc` files | Inside `~/lab/` | Allowed — normal workflow |
 | All other commands (log, diff, status…) | Anywhere | Allowed |
 
 ### Without the wrapper, a student could
@@ -454,18 +467,20 @@ git push
 ### Save your own files (mywork/)
 
 ```bash
-cd ~/lab/mywork
+# Create your file anywhere in ~/labs/
+cd ~/labs
 vim my_adder.v
+# decrypt_watch.sh automatically encrypts it -> ~/lab/mywork/my_adder.v.enc
 
+# Commit the encrypted version to GitHub
 cd ~/lab
-git add mywork/my_adder.v
+git add mywork/my_adder.v.enc
 git commit -m "my adder design"
 git push
-# Plain .v pushed to GitHub — these are your own designs, not teacher files
 ```
 
-`mywork/` is tracked by git as plain `.v` because these are student-authored
-files, not copyrighted lab materials. The `.gitignore` explicitly allows them.
+Student-created files are auto-encrypted to `~/lab/mywork/*.v.enc` on every save.
+Only `.enc` files can be committed — the pre-commit hook blocks any plain `.v` or other file type.
 
 ---
 
@@ -552,20 +567,21 @@ cd chipcraft-lab-files && git add *.v.enc && git commit -m "lab1" && git push
 ```
 /home/ubuntu/
 |
-+-- lab/                   <- git repo (persistent)
-|   +-- counter.v.enc      <- re-encrypted on every student save
++-- lab/                        <- git repo (persistent)
+|   +-- counter.v.enc           <- re-encrypted on every student save
 |   +-- tb_counter.v.enc
 |   +-- Makefile
-|   +-- .gitignore
-|   +-- mywork/            <- student-created .v files (tracked by git, plain .v)
-|       +-- my_adder.v
+|   +-- .gitignore              <- blocks all files; only *.enc allowed
+|   +-- mywork/                 <- student work (auto-encrypted on save)
+|       +-- my_adder.v.enc      <- only .enc files here, committed to git
 |
-+-- labs/                  <- tmpfs (RAM only — vanishes when container stops)
-    +-- counter.v          <- decrypted, watermarked — student edits here
++-- labs/                       <- tmpfs (RAM only — vanishes when container stops)
+    +-- counter.v               <- decrypted, watermarked — student edits here
     +-- tb_counter.v
-    +-- Makefile           <- copied from ~/lab/ at startup
-    +-- sim.vvp            <- generated by iverilog
-    +-- counter.vcd        <- generated by simulation, opened in GTKWave
+    +-- my_adder.v              <- student file (auto-encrypted to ~/lab/mywork/)
+    +-- Makefile                <- copied from ~/lab/ at startup
+    +-- sim.vvp                 <- generated by iverilog
+    +-- counter.vcd             <- generated by simulation, opened in GTKWave
 ```
 
 ---

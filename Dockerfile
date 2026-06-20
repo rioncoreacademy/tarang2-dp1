@@ -34,8 +34,6 @@ RUN apt-get update \
         python3-pip \
         # GTKWave waveform viewer
         gtkwave \
-        # C compiler for microcontrollers
-        sdcc \
         # Build tools (also needed for Verilator build)
         build-essential \
         autoconf \
@@ -62,11 +60,20 @@ RUN apt-get update \
         libxext6:i386 \
         # File-save watcher (needed by decrypt_watch.sh)
         inotify-tools \
+        bzip2 \
         # Egress firewall (blocks students uploading decrypted files to internet)
         iptables \
         sudo \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Install SDCC 4.5.0 from official SourceForge binary (apt ships 4.0.0)
+# To upgrade later: https://sourceforge.net/projects/sdcc/files/sdcc-linux-amd64/
+RUN curl -fSL \
+       "https://sourceforge.net/projects/sdcc/files/sdcc-linux-amd64/4.5.0/sdcc-4.5.0-amd64-unknown-linux2.5.tar.bz2/download" \
+       -o /tmp/sdcc.tar.bz2 \
+    && tar -xjf /tmp/sdcc.tar.bz2 -C /usr/local --strip-components=1 \
+    && rm /tmp/sdcc.tar.bz2
 
 # Allow ubuntu to run only iptables via sudo (no full root access)
 RUN echo "ubuntu ALL=(root) NOPASSWD: /sbin/iptables" \

@@ -130,25 +130,27 @@ encrypt_file() {
     local base
     base=$(basename "$v_file")           # counter.v
     local enc="$WORK_DIR/${base}.enc"
+    local dest_label="work"
 
-    # Only re-encrypt teacher-provided files — those that already have a
-    # .v.enc source in WORK_DIR.  New files created by the student (no
-    # matching .enc) are left alone as plain .v files.
+    # Teacher-provided files have a matching .enc in WORK_DIR root.
+    # Student-created new files go into WORK_DIR/mywork/ so they can be
+    # committed to git separately from teacher content.
     if [[ ! -f "$enc" ]]; then
-        echo "[lab] Skipped  : $base (student file — no .enc source)"
-        return 0
+        mkdir -p "$WORK_DIR/mywork"
+        enc="$WORK_DIR/mywork/${base}.enc"
+        dest_label="work/mywork"
     fi
 
     # Atomic write: encrypt to tmp then rename so a kill mid-save can't corrupt.
     local tmp
-    tmp=$(mktemp "$enc.XXXXXX")
+    tmp=$(mktemp "${enc}.XXXXXX")
     if openssl enc -aes-256-cbc -pbkdf2 -salt \
            -k "$KEY" -in "$v_file" -out "$tmp" 2>/dev/null; then
         mv "$tmp" "$enc"
-        echo "[lab] Re-encrypted: $base → work/${base}.enc"
+        echo "[lab] Encrypted: $base → ${dest_label}/${base}.enc"
     else
         rm -f "$tmp"
-        echo "[lab] ERROR – could not re-encrypt: $base" >&2
+        echo "[lab] ERROR – could not encrypt: $base" >&2
     fi
 }
 
