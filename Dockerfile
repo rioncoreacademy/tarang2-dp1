@@ -103,8 +103,9 @@ RUN chmod +x /usr/local/bin/decrypt_watch.sh \
              /usr/local/bin/git \
              /usr/local/lib/chipcraft-hooks/pre-commit \
     # System-level git config: *.v excluded and hooksPath locked — root-owned, not writable by ubuntu
-    && git config --system core.excludesFile /etc/chipcraft-gitignore \
-    && git config --system core.hooksPath    /usr/local/lib/chipcraft-hooks \
+    # Use /usr/bin/git directly — the wrapper at /usr/local/bin/git blocks hooksPath changes
+    && /usr/bin/git config --system core.excludesFile /etc/chipcraft-gitignore \
+    && /usr/bin/git config --system core.hooksPath    /usr/local/lib/chipcraft-hooks \
     && chmod 444 /etc/gitconfig /etc/chipcraft-gitignore
 
 COPY novnc-index.html /usr/share/novnc/index.html
