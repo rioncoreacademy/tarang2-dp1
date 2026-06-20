@@ -15,6 +15,13 @@ case "$CMD" in
         echo "[ChipCraft] git clone is not allowed in this lab." >&2
         exit 1
         ;;
+    config)
+        # Block attempts to disable the pre-commit hook
+        if [[ "$*" == *"hooksPath"* ]]; then
+            echo "[ChipCraft] Modifying git hook settings is not allowed." >&2
+            exit 1
+        fi
+        ;;
     push|commit|add)
         # Only allow git add/commit/push from inside ~/lab/
         CURRENT="$(pwd)"

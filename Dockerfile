@@ -93,14 +93,19 @@ RUN useradd -m -s /bin/bash ubuntu
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-COPY tools/decrypt_watch.sh /usr/local/bin/decrypt_watch.sh
-COPY tools/watermark.py    /usr/local/bin/watermark.py
-COPY tools/git-wrapper.sh  /usr/local/bin/git
-COPY tools/pre-commit      /usr/local/lib/chipcraft-hooks/pre-commit
+COPY tools/decrypt_watch.sh       /usr/local/bin/decrypt_watch.sh
+COPY tools/watermark.py           /usr/local/bin/watermark.py
+COPY tools/git-wrapper.sh         /usr/local/bin/git
+COPY tools/pre-commit             /usr/local/lib/chipcraft-hooks/pre-commit
+COPY tools/chipcraft-gitignore    /etc/chipcraft-gitignore
 RUN chmod +x /usr/local/bin/decrypt_watch.sh \
              /usr/local/bin/watermark.py \
              /usr/local/bin/git \
-             /usr/local/lib/chipcraft-hooks/pre-commit
+             /usr/local/lib/chipcraft-hooks/pre-commit \
+    # System-level git config: *.v excluded and hooksPath locked — root-owned, not writable by ubuntu
+    && git config --system core.excludesFile /etc/chipcraft-gitignore \
+    && git config --system core.hooksPath    /usr/local/lib/chipcraft-hooks \
+    && chmod 444 /etc/gitconfig /etc/chipcraft-gitignore
 
 COPY novnc-index.html /usr/share/novnc/index.html
 

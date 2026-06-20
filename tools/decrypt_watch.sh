@@ -196,17 +196,18 @@ GIEOF
 echo "[lab] Watching $LAB_DIR for student saves …"
 
 # ── 4. Watch for saves and re-encrypt ────────────────────────────────────────
-# Watch the entire home directory recursively so students can save .v files
-# from any folder (~/labs/, ~/work/, ~/, etc.).
-# encrypt_file checks for a matching .v.enc in WORK_DIR before acting,
-# so student-created files and files in unrelated folders are silently skipped.
+# Watch home AND /workspaces/ (Codespace workspace) so files saved outside
+# ~/labs/ — e.g. directly in the VS Code editor panel — also get encrypted.
 #
 # close_write : mousepad, gedit, nano, …
 # moved_to    : vim's atomic save (write-to-temp → rename)
+WATCH_DIRS="$HOME"
+[ -d "/workspaces" ] && WATCH_DIRS="$WATCH_DIRS /workspaces"
+
 inotifywait -m -r \
     -e close_write,moved_to \
     --format '%w%f' \
-    "$HOME" 2>/dev/null \
+    $WATCH_DIRS 2>/dev/null \
 | while IFS= read -r changed; do
     # Only act on .v files (not .v.enc, not .vcd, not anything else)
     if [[ "$changed" == *.v && ! "$changed" == *.v.enc ]]; then
