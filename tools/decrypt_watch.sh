@@ -1,5 +1,5 @@
 #!/bin/bash
-# Transparent encrypt/decrypt for .v lab files inside the container.
+# Transparent encrypt/decrypt for ALL lab files inside the container.
 #
 # Security model
 # ──────────────
@@ -8,10 +8,11 @@
 #    that expires in 30 seconds.
 # 2. After the key is obtained the token is erased from the environment so
 #    students cannot reuse it via a terminal.
-# 3. Decrypted .v files are written to /home/ubuntu/labs which is a tmpfs
+# 3. Decrypted files are written to /home/ubuntu/labs which is a tmpfs
 #    (RAM-only mount).  Plaintext never touches disk.
-# 4. Whenever the student saves a .v file it is immediately re-encrypted back
-#    to /home/ubuntu/work/*.v.enc (the persistent volume).
+# 4. Whenever the student saves any file it is immediately re-encrypted back
+#    to the corresponding path in /home/ubuntu/lab/*.enc (the persistent volume).
+# 5. Subfolder structure is preserved: lab/sub/file.enc → labs/sub/file
 #
 # Environment variables:
 #   BOOTSTRAP_TOKEN   – one-time token (server mode via NVR API)
@@ -99,58 +100,63 @@ echo "[lab] Key obtained."
 
 decrypt_file() {
     local enc="$1"
-    local base
-    base=$(basename "$enc" .enc)         # counter.v.enc → counter.v
-    local out="$LAB_DIR/$base"
+    # Compute relative path from WORK_DIR and strip .enc
+    # e.g. ~/lab/subfolder/notes.pdf.enc → subfolder/notes.pdf
+    local rel
+    rel="${enc#$WORK_DIR/}"              # strip WORK_DIR prefix
+    local out_rel="${rel%.enc}"          # strip .enc extension
+    local out="$LAB_DIR/$out_rel"
+
+    # Create subfolder in LAB_DIR if needed
+    mkdir -p "$(dirname "$out")"
+
     if openssl enc -d -aes-256-cbc -pbkdf2 \
            -k "$KEY" -in "$enc" -out "$out" 2>/dev/null; then
         local student="${GITHUB_USER:-unknown}"
 
-        # ── Invisible watermark (primary) ────────────────────────────────────
-        # Encodes the student's GitHub username as trailing spaces on each line.
-        # Completely invisible to the human eye and to editors.
-        # Survives deletion of the visible comment below.
-        python3 /usr/local/bin/watermark.py encode "$student" \
-            < "$out" > "${out}.wm" && mv "${out}.wm" "$out"
+        # Watermark only .v text files (not binaries like PDFs/images)
+        if [[ "$out" == *.v ]]; then
+            # ── Invisible watermark (primary) ────────────────────────────────
+            python3 /usr/local/bin/watermark.py encode "$student" \
+                < "$out" > "${out}.wm" && mv "${out}.wm" "$out"
 
-        # ── Visible watermark (decoy) ─────────────────────────────────────────
-        # Student will likely delete this line thinking it removes the watermark.
-        # The invisible one above is still there even after they delete this.
-        local stamp="// [ChipCraft] Student: @${student} | $(date -u +%Y-%m-%d)"
-        printf '%s\n' "$stamp" | cat - "$out" > "${out}.hdr" && mv "${out}.hdr" "$out"
+            # ── Visible watermark (decoy) ─────────────────────────────────────
+            local stamp="// [ChipCraft] Student: @${student} | $(date -u +%Y-%m-%d)"
+            printf '%s\n' "$stamp" | cat - "$out" > "${out}.hdr" && mv "${out}.hdr" "$out"
+        fi
 
-        echo "[lab] Decrypted : $base"
+        echo "[lab] Decrypted : $out_rel"
     else
-        echo "[lab] ERROR – could not decrypt: $(basename "$enc")" >&2
+        echo "[lab] ERROR – could not decrypt: $rel" >&2
     fi
 }
 
 encrypt_file() {
-    local v_file="$1"
-    local base
-    base=$(basename "$v_file")           # counter.v
-    local enc="$WORK_DIR/${base}.enc"
-    local dest_label="work"
+    local lab_file="$1"
+    # Compute relative path from LAB_DIR
+    # e.g. ~/labs/subfolder/notes.pdf → subfolder/notes.pdf
+    local rel
+    rel="${lab_file#$LAB_DIR/}"
+    local enc="$WORK_DIR/${rel}.enc"
+    local dest_label="work/$rel.enc"
 
-    # Teacher-provided files have a matching .enc in WORK_DIR root.
-    # Student-created new files go into WORK_DIR/mywork/ so they can be
-    # committed to git separately from teacher content.
+    # Student-created files that have no matching .enc go into WORK_DIR/mywork/
     if [[ ! -f "$enc" ]]; then
-        mkdir -p "$WORK_DIR/mywork"
-        enc="$WORK_DIR/mywork/${base}.enc"
-        dest_label="work/mywork"
+        mkdir -p "$WORK_DIR/mywork/$(dirname "$rel")"
+        enc="$WORK_DIR/mywork/${rel}.enc"
+        dest_label="work/mywork/${rel}.enc"
     fi
 
     # Atomic write: encrypt to tmp then rename so a kill mid-save can't corrupt.
     local tmp
     tmp=$(mktemp "${enc}.XXXXXX")
     if openssl enc -aes-256-cbc -pbkdf2 -salt \
-           -k "$KEY" -in "$v_file" -out "$tmp" 2>/dev/null; then
+           -k "$KEY" -in "$lab_file" -out "$tmp" 2>/dev/null; then
         mv "$tmp" "$enc"
-        echo "[lab] Encrypted: $base → ${dest_label}/${base}.enc"
+        echo "[lab] Encrypted: $rel → $dest_label"
     else
         rm -f "$tmp"
-        echo "[lab] ERROR – could not encrypt: $base" >&2
+        echo "[lab] ERROR – could not encrypt: $rel" >&2
     fi
 }
 
@@ -160,37 +166,28 @@ mkdir -p "$LAB_DIR" "$WORK_DIR"
 echo "[lab] Decrypting lab files …"
 found=0
 
+# Decrypt ALL .enc files recursively (preserves subfolder structure)
 while IFS= read -r enc; do
     decrypt_file "$enc"
     found=1
-done < <(find "$WORK_DIR" -maxdepth 1 -name "*.v.enc" 2>/dev/null)
+done < <(find "$WORK_DIR" -type f -name "*.enc" 2>/dev/null)
 
 # Fall back to the read-only shared folder if the git repo is empty
 if [[ $found -eq 0 ]]; then
     while IFS= read -r enc; do
         decrypt_file "$enc"
         found=1
-    done < <(find /home/ubuntu/shared -maxdepth 5 -name "*.v.enc" 2>/dev/null)
+    done < <(find /home/ubuntu/shared -type f -name "*.enc" 2>/dev/null)
 fi
 
-[[ $found -eq 0 ]] && echo "[lab] No *.v.enc source files found."
+[[ $found -eq 0 ]] && echo "[lab] No encrypted files found."
 
-# Copy plain support files (Makefile, *.cpp, *.sh, etc.) from the git repo
-# into the working labs dir so students can 'make' right there.
-echo "[lab] Copying support files → $LAB_DIR"
-find "$WORK_DIR" -maxdepth 1 -type f \
-    ! -name "*.v" ! -name "*.v.enc" ! -name ".gitignore" \
-    | while IFS= read -r f; do
-        cp -n "$f" "$LAB_DIR/"   # -n: don't overwrite if already there
-        echo "[lab] Copied : $(basename "$f")"
-    done
-
-# Block git inside LAB_DIR (tmpfs) so students cannot push decrypted .v files.
-# The git repo lives in WORK_DIR (~/lab) which only has .v.enc files.
+# Block git inside LAB_DIR (tmpfs) so students cannot push decrypted files.
+# The git repo lives in WORK_DIR (~/lab) which only has .enc files.
 rm -rf "$LAB_DIR/.git"
 cat > "$LAB_DIR/.gitignore" << 'GIEOF'
 # Git is disabled in this directory — work with ~/lab for version control
-*.v
+*
 GIEOF
 
 echo "[lab] Watching $LAB_DIR for student saves …"
@@ -209,8 +206,8 @@ inotifywait -m -r \
     --format '%w%f' \
     $WATCH_DIRS 2>/dev/null \
 | while IFS= read -r changed; do
-    # Only act on .v files (not .v.enc, not .vcd, not anything else)
-    if [[ "$changed" == *.v && ! "$changed" == *.v.enc ]]; then
+    # Re-encrypt any file saved inside LAB_DIR, skip .enc files themselves
+    if [[ "$changed" == "$LAB_DIR"* && "$changed" != *.enc ]]; then
         encrypt_file "$changed"
     fi
 done
