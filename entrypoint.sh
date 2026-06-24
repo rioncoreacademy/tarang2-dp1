@@ -24,6 +24,16 @@ sudo iptables -A OUTPUT -p tcp --dport 443 -d 140.82.112.0/20  -j ACCEPT
 sudo iptables -A OUTPUT -p tcp --dport 443 -d 185.199.108.0/22 -j ACCEPT
 sudo iptables -A OUTPUT -p tcp --dport 443 -d 192.30.252.0/22  -j ACCEPT
 sudo iptables -A OUTPUT -p tcp --dport 22  -d 140.82.112.0/20  -j ACCEPT
+# Cloudflare Worker (decryption key fetch) — workers.dev sits behind Cloudflare's
+# anycast network, so a single resolved IP is not stable across requests.
+# Allow Cloudflare's published IPv4 ranges instead (https://www.cloudflare.com/ips-v4).
+for CF_RANGE in \
+    173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 \
+    141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 \
+    197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 \
+    104.24.0.0/14 172.64.0.0/13 131.0.72.0/22; do
+    sudo iptables -A OUTPUT -p tcp --dport 443 -d "$CF_RANGE" -j ACCEPT
+done
 sudo iptables -P OUTPUT DROP               # block everything else
 echo "Egress firewall applied."
 # ─────────────────────────────────────────────────────────────────────────────
