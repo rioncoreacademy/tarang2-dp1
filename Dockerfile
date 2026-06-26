@@ -42,6 +42,7 @@ RUN apt-get update \
         libfl2 \
         libfl-dev \
         zlib1g-dev \
+        liblz4-dev \
         help2man \
         libelf-dev \
         texinfo \
