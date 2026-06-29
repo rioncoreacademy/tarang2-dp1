@@ -92,6 +92,15 @@ ENV PATH="/opt/oss-cad-suite/bin:$PATH"
 
 RUN useradd -m -s /bin/bash ubuntu
 
+# Create ~/lab and own it as ubuntu *before* any tmpfs mount is declared at
+# /home/ubuntu/lab/.build. Without this, Docker/Codespaces auto-creates the
+# missing parent directory itself to attach that mount — as root, with
+# default 0755 — and ubuntu is left with read+execute but no write on ~/lab
+# itself, breaking every clone/touch/mv into it. ubuntu's sudo is locked to
+# iptables only (see below), so this can't be fixed later from inside the
+# container — it has to be baked into the image.
+RUN mkdir -p /home/ubuntu/lab && chown ubuntu:ubuntu /home/ubuntu/lab
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
