@@ -132,9 +132,87 @@ function! s:Encrypt()
   set nomodified
 endfunction
 
+" ── Guard against bare (non-.enc) source files under ~/lab ──────────────────
+"
+" If a student opens "new_tests.v" instead of "new_tests.v.enc" — an easy
+" typo, not a deliberate bypass — none of the above applies: Vim's default
+" swapfile is created, and :w would write real plaintext straight to disk,
+" completely outside the encryption scheme. This mirrors the same allowlist
+" chipcraft-lab-files/.gitignore already enforces at the git layer (only
+" Makefile/.gitignore/README.md and *.enc are real plaintext), but live in
+" the editor instead of just at commit time. ~/lab/.build/ is exempt — that's
+" the tmpfs build-scratch area where transient plaintext is expected.
+
+let s:lab_root = expand('$HOME') . '/lab'
+let s:plain_allowlist = ['Makefile', '.gitignore', 'README.md']
+
+function! s:UnderLab(path)
+  return a:path =~# '^' . escape(s:lab_root, '/\') . '/'
+endfunction
+
+function! s:UnderBuild(path)
+  return a:path =~# '^' . escape(s:lab_root, '/\') . '/\.build\(/\|$\)'
+endfunction
+
+function! s:IsAllowedPlain(path)
+  return index(s:plain_allowlist, fnamemodify(a:path, ':t')) >= 0
+endfunction
+
+function! s:PassthroughRead()
+  if filereadable(expand('%:p'))
+    silent call setline(1, readfile(expand('%:p'), 'b'))
+  endif
+  silent! execute 'doautocmd filetypedetect BufRead ' . fnameescape(expand('%:p'))
+  set nomodified
+endfunction
+
+function! s:PassthroughWrite()
+  call mkdir(fnamemodify(expand('%:p'), ':h'), 'p')
+  call writefile(getline(1, '$'), expand('%:p'), 'b')
+  set nomodified
+endfunction
+
+function! s:GuardedRead()
+  let l:path = expand('%:p')
+  if l:path =~# '\.enc$' || !s:UnderLab(l:path)
+    return  " handled by the ChipCraftCrypt group above, or outside ~/lab entirely
+  endif
+  call s:HardenBuffer()
+  call s:PassthroughRead()
+  if !s:UnderBuild(l:path) && !s:IsAllowedPlain(l:path)
+    echohl WarningMsg
+    echom 'ChipCraft: "' . fnamemodify(l:path, ':t') . '" is plaintext under ~/lab — save as .enc instead.'
+    echohl None
+  endif
+endfunction
+
+function! s:GuardedWrite()
+  let l:path = expand('%:p')
+  if l:path =~# '\.enc$' || !s:UnderLab(l:path)
+    return
+  endif
+  if s:UnderBuild(l:path) || s:IsAllowedPlain(l:path)
+    call s:PassthroughWrite()
+    return
+  endif
+  echohl ErrorMsg
+  echom 'ChipCraft: refusing to save plaintext "' . fnamemodify(l:path, ':t') . '" under ~/lab.'
+  echom 'ChipCraft: save as "' . fnamemodify(l:path, ':t') . '.enc" instead — gvim will encrypt it automatically.'
+  echohl None
+endfunction
+
 augroup ChipCraftCrypt
   autocmd!
   autocmd BufReadPre,BufNewFile *.enc call s:HardenBuffer()
   autocmd BufReadCmd  *.enc call s:Decrypt()
   autocmd BufWriteCmd *.enc call s:Encrypt()
 augroup END
+
+let s:lab_pattern = s:lab_root . '/**'
+
+augroup ChipCraftPlainGuard
+  autocmd!
+augroup END
+execute 'autocmd ChipCraftPlainGuard BufReadPre,BufNewFile ' . s:lab_pattern . ' call s:HardenBuffer()'
+execute 'autocmd ChipCraftPlainGuard BufReadCmd  ' . s:lab_pattern . ' call s:GuardedRead()'
+execute 'autocmd ChipCraftPlainGuard BufWriteCmd ' . s:lab_pattern . ' call s:GuardedWrite()'

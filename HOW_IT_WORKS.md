@@ -81,6 +81,7 @@ an environment variable in the container, so `docker inspect` reveals nothing us
 | `tools/encrypt_lab.sh` | chipcraft-lab | Teacher encrypts `.v` files on their PC |
 | `tools/chipcraft-key-init.sh` | chipcraft-lab | Container — fetches the key once, writes `~/.chipcraft_key` (mode 600) |
 | `tools/chipcraft-tree.sh` | chipcraft-lab | Container — decrypts/shreds a whole subtree (for multi-file Perl/bash build flows like `tarang2_dp1`) |
+| `tools/chipcraft-sweep.sh` | chipcraft-lab | Container — background watcher; auto-encrypts any stray plaintext that appears under `~/lab` by any means other than gvim (`cp`, `mv`, `docker cp`, …) |
 | `tools/chipcraft-crypt.vim` | chipcraft-lab | System-wide gvim plugin — decrypts/encrypts `*.v.enc` in memory, no plaintext file ever written |
 | `tools/watermark.py` | chipcraft-lab | Embeds / reads invisible trailing-space watermark |
 | `tools/detect_leak.sh` | chipcraft-lab | Teacher tool — identifies student from a leaked file |
@@ -406,6 +407,27 @@ lifetime), and the one true limit — a `kill -9` on the subshell can't be
 trapped by any process — is a kernel-level constraint, not specific to this
 tool.
 
+### Catching stray plaintext from cp / mv / docker cp
+
+`chipcraft-crypt.vim` only intercepts Vim's own buffer I/O — it can't see a
+file written by any other tool. If a student runs `cp myfile.v ~/lab/` (or
+`docker cp` copies a plaintext file in from outside), that file just exists,
+unencrypted, with nothing to stop it.
+
+`chipcraft-sweep.sh` runs as a background `inotifywait` watcher for exactly
+this gap: any file under `~/lab` that changes and isn't `*.enc`, isn't under
+`~/lab/.build/` (tmpfs build scratch) or `~/lab/.git/` (git's own internals —
+touching these would corrupt the repo), and isn't one of the allowed
+plaintext infra files (`Makefile`, `.gitignore`, `README.md`) gets moved out
+of the watched tree, encrypted to its `.enc` counterpart, and shredded —
+automatically, within moments of appearing, regardless of how it got there.
+
+Same residual limit as everywhere else in this system: there's an
+unavoidable race between "file appears" and the watcher reacting. A
+`docker cp` reading the file in that exact instant can't be prevented by
+anything running inside the container — that's a kernel-level limit, not
+something this script (or any script) can close to zero.
+
 ### tmpfs — why it still matters
 
 `/home/ubuntu/lab/.build` is still a **RAM-only filesystem** (tmpfs, 100 MB), nested
@@ -705,6 +727,7 @@ buffer; see the Decryption section above.
 | **`echo $CLASS_TOKEN`** | Visible | CLASS_TOKEN is a door pass, not the key — harmless |
 | **`docker cp ~/lab/*.enc`** | Blocked | Ciphertext only — useless without the key |
 | **`docker cp ~/lab/.build/*.v`** | Blocked (almost always) | No plaintext `.v` file exists there except for the few seconds a `make` is actively compiling |
+| **`cp`/`mv`/`docker cp` dropping plaintext into `~/lab`** | Blocked (almost always) | `chipcraft-sweep.sh` auto-encrypts and shreds any stray plaintext within moments of it appearing, regardless of how it got there — but can't beat a read happening in the exact same instant |
 | **`cat ~/.chipcraft_key`** | Not possible to block | Same Linux user as gvim — see note in the key-delivery table above |
 | **Phone photo / screen recording** | Cannot block | Watermark identifies the student |
 | **Manual typing** the code | Cannot block | Watermark + academic integrity policy |

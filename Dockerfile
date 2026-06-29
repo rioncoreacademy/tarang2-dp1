@@ -61,6 +61,8 @@ RUN apt-get update \
         libxext6 \
         libxext6:i386 \
         bzip2 \
+        # File-write watcher (needed by chipcraft-sweep.sh)
+        inotify-tools \
         # Egress firewall (blocks students uploading decrypted files to internet)
         iptables \
         sudo \
@@ -95,6 +97,7 @@ RUN chmod +x /entrypoint.sh
 
 COPY tools/chipcraft-key-init.sh   /usr/local/bin/chipcraft-key-init.sh
 COPY tools/chipcraft-tree.sh      /usr/local/bin/chipcraft-tree
+COPY tools/chipcraft-sweep.sh     /usr/local/bin/chipcraft-sweep.sh
 COPY tools/watermark.py           /usr/local/bin/watermark.py
 COPY tools/git-wrapper.sh         /usr/local/bin/git
 COPY tools/pre-commit             /usr/local/lib/chipcraft-hooks/pre-commit
@@ -105,6 +108,7 @@ COPY tools/chipcraft-gitignore    /etc/chipcraft-gitignore
 COPY tools/chipcraft-crypt.vim    /usr/share/vim/vimfiles/plugin/chipcraft-crypt.vim
 RUN chmod +x /usr/local/bin/chipcraft-key-init.sh \
              /usr/local/bin/chipcraft-tree \
+             /usr/local/bin/chipcraft-sweep.sh \
              /usr/local/bin/watermark.py \
              /usr/local/bin/git \
              /usr/local/lib/chipcraft-hooks/pre-commit \

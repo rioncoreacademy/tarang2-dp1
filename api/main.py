@@ -130,10 +130,19 @@ def _clone_repo(container_id: str, github_user: str, github_token: str, template
     time.sleep(10)  # wait for VNC server inside container to initialize
     try:
         container = dc.containers.get(container_id)
-        container.exec_run(
-            ["bash", "-c", f"rm -rf ~/lab && git clone {repo_url} ~/lab"],
-            user="ubuntu",
+        # Clone into a temp dir then merge into ~/lab — cloning directly
+        # into ~/lab (or rm -rf'ing it first) fails because the .build
+        # tmpfs mount (declared at container creation) already exists
+        # there; rm -rf can't remove an active mount point either, so it
+        # would survive the wipe and still block a direct clone right after.
+        clone_cmd = (
+            "TMPCLONE=$(mktemp -d) && "
+            f"git clone {repo_url} \"$TMPCLONE\" && "
+            "mkdir -p ~/lab && shopt -s dotglob && "
+            "mv \"$TMPCLONE\"/* ~/lab/ && "
+            "rmdir \"$TMPCLONE\""
         )
+        container.exec_run(["bash", "-c", clone_cmd], user="ubuntu")
     except Exception as e:
         print(f"clone error: {e}", flush=True)
 

@@ -95,10 +95,22 @@ echo "Lab desktop ready on port $NOVNC_PORT"
 # the generic public template here would just be wasted work.
 if [[ -z "${BOOTSTRAP_TOKEN:-}" && ! -d "$HOME/lab/.git" ]]; then
     echo "[lab] Cloning chipcraft-lab-files -> ~/lab …" >> /tmp/lab-crypto.log
+    # Clone into a temp dir, then merge into ~/lab — cloning directly into
+    # ~/lab fails because the .build tmpfs mount (declared at container
+    # creation) already exists there, making git see a "non-empty" target.
     # /usr/bin/git directly — /usr/local/bin/git (the wrapper) blocks `clone` outright.
-    /usr/bin/git clone https://github.com/narrave/chipcraft-lab-files.git "$HOME/lab" \
-        >> /tmp/lab-crypto.log 2>&1 \
-        || echo "[lab] WARNING: could not clone chipcraft-lab-files." >> /tmp/lab-crypto.log
+    TMPCLONE=$(mktemp -d)
+    if /usr/bin/git clone https://github.com/narrave/chipcraft-lab-files.git "$TMPCLONE" \
+        >> /tmp/lab-crypto.log 2>&1; then
+        mkdir -p "$HOME/lab"
+        shopt -s dotglob
+        mv "$TMPCLONE"/* "$HOME/lab"/ 2>>/tmp/lab-crypto.log
+        shopt -u dotglob
+        rmdir "$TMPCLONE" 2>/dev/null
+    else
+        echo "[lab] WARNING: could not clone chipcraft-lab-files." >> /tmp/lab-crypto.log
+        rm -rf "$TMPCLONE"
+    fi
 fi
 
 # Fetch key once and write it to ~/.chipcraft_key (mode 600). Decryption itself
@@ -106,6 +118,12 @@ fi
 # plaintext file is ever written to disk (see tools/chipcraft-crypt.vim).
 # Logs go to /tmp/lab-crypto.log — visible to root, not ubuntu, for debugging.
 /usr/local/bin/chipcraft-key-init.sh >> /tmp/lab-crypto.log 2>&1 &
+
+# Watch ~/lab for stray plaintext appearing by any means other than gvim —
+# cp, mv, docker cp, anything. chipcraft-crypt.vim only sees Vim's own
+# buffer I/O; this catches what that can't, auto-encrypting and shredding
+# any bare plaintext file the instant it shows up. Same log as above.
+/usr/local/bin/chipcraft-sweep.sh >> /tmp/lab-crypto.log 2>&1 &
 
 # Keep container alive
 exec tail -f /dev/null
