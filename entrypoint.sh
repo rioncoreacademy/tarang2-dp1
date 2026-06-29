@@ -87,9 +87,25 @@ nohup $WS --web=/usr/share/novnc/ "$NOVNC_PORT" localhost:"$VNC_PORT" >> /tmp/no
 
 echo "Lab desktop ready on port $NOVNC_PORT"
 
-# Fetch key from API, decrypt .v.enc → tmpfs (/home/ubuntu/labs), re-encrypt on save.
+# Clone the public lab-files repo into ~/lab if it isn't there yet — needed
+# for Local Docker Mode, where there's no postAttachCommand/setup.sh step to
+# do this. Server Mode skips this: BOOTSTRAP_TOKEN being set means the API
+# will exec its own `rm -rf ~/lab && git clone <student's fork>` shortly
+# after this container starts (see api/main.py's _clone_repo()), so cloning
+# the generic public template here would just be wasted work.
+if [[ -z "${BOOTSTRAP_TOKEN:-}" && ! -d "$HOME/lab/.git" ]]; then
+    echo "[lab] Cloning chipcraft-lab-files -> ~/lab …" >> /tmp/lab-crypto.log
+    # /usr/bin/git directly — /usr/local/bin/git (the wrapper) blocks `clone` outright.
+    /usr/bin/git clone https://github.com/narrave/chipcraft-lab-files.git "$HOME/lab" \
+        >> /tmp/lab-crypto.log 2>&1 \
+        || echo "[lab] WARNING: could not clone chipcraft-lab-files." >> /tmp/lab-crypto.log
+fi
+
+# Fetch key once and write it to ~/.chipcraft_key (mode 600). Decryption itself
+# happens inside gvim, in memory, when a student opens any *.enc file — no
+# plaintext file is ever written to disk (see tools/chipcraft-crypt.vim).
 # Logs go to /tmp/lab-crypto.log — visible to root, not ubuntu, for debugging.
-nohup /usr/local/bin/decrypt_watch.sh >> /tmp/lab-crypto.log 2>&1 &
+/usr/local/bin/chipcraft-key-init.sh >> /tmp/lab-crypto.log 2>&1 &
 
 # Keep container alive
 exec tail -f /dev/null

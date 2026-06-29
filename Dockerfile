@@ -60,8 +60,6 @@ RUN apt-get update \
         libxft2:i386 \
         libxext6 \
         libxext6:i386 \
-        # File-save watcher (needed by decrypt_watch.sh)
-        inotify-tools \
         bzip2 \
         # Egress firewall (blocks students uploading decrypted files to internet)
         iptables \
@@ -95,12 +93,18 @@ RUN useradd -m -s /bin/bash ubuntu
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-COPY tools/decrypt_watch.sh       /usr/local/bin/decrypt_watch.sh
+COPY tools/chipcraft-key-init.sh   /usr/local/bin/chipcraft-key-init.sh
+COPY tools/chipcraft-tree.sh      /usr/local/bin/chipcraft-tree
 COPY tools/watermark.py           /usr/local/bin/watermark.py
 COPY tools/git-wrapper.sh         /usr/local/bin/git
 COPY tools/pre-commit             /usr/local/lib/chipcraft-hooks/pre-commit
 COPY tools/chipcraft-gitignore    /etc/chipcraft-gitignore
-RUN chmod +x /usr/local/bin/decrypt_watch.sh \
+# System-wide gvim plugin: transparent in-memory decrypt/encrypt of *.enc
+# (any source type, not just Verilog). Loaded for every user automatically —
+# Debian/Ubuntu vim ships /usr/share/vim/vimfiles in 'runtimepath' by default.
+COPY tools/chipcraft-crypt.vim    /usr/share/vim/vimfiles/plugin/chipcraft-crypt.vim
+RUN chmod +x /usr/local/bin/chipcraft-key-init.sh \
+             /usr/local/bin/chipcraft-tree \
              /usr/local/bin/watermark.py \
              /usr/local/bin/git \
              /usr/local/lib/chipcraft-hooks/pre-commit \

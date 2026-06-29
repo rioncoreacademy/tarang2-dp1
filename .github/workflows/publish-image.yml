@@ -8,7 +8,9 @@ on:
       - entrypoint.sh
       - chipcraft-run.sh
       - novnc-index.html
-      - tools/decrypt_watch.sh
+      - tools/chipcraft-key-init.sh
+      - tools/chipcraft-tree.sh
+      - tools/chipcraft-crypt.vim
 
 jobs:
   build-and-push:

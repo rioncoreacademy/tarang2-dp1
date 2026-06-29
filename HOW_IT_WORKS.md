@@ -6,8 +6,13 @@ ChipCraft is a browser-based VLSI lab platform. Students log in with GitHub, get
 private Linux desktop (XFCE + VNC) in their browser, and work with Verilog files
 using Verilator, iverilog, and GTKWave — without installing anything locally.
 
-The Verilog lab files are **encrypted at rest**. Students can edit and compile them
-inside the container, but they cannot extract the plaintext or the encryption key.
+The Verilog lab files are **encrypted at rest**. Students edit them in gvim, which
+decrypts straight into the editor buffer and never writes a plaintext `.v` file to
+disk — so `docker cp`, the terminal, or any other generic copy command only ever
+finds ciphertext. Compiling is the one exception: `iverilog` is a separate process
+that needs a real file, so `make` decrypts just-in-time and shreds the plaintext
+the moment the compile step finishes — exposure measured in seconds, not the whole
+session.
 
 The encryption key is delivered via a **Cloudflare Worker** — it never appears as
 an environment variable in the container, so `docker inspect` reveals nothing useful.
@@ -52,11 +57,13 @@ an environment variable in the container, so `docker inspect` reveals nothing us
 |  |                  | token  |    Makefile                           |   |
 |  |  GitHub OAuth    |        |    mywork/         <- student .v files|   |
 |  +------------------+        |                                       |   |
-|                               |  ~/labs/           (tmpfs - RAM only) |   |
-|                               |    counter.v       <- student edits   |   |
-|                               |    tb_counter.v                       |   |
-|                               |    Makefile                           |   |
+|                               |  ~/.chipcraft_key  (mode 600)         |   |
+|                               |  gvim decrypts *.v.enc in memory      |   |
+|                               |  (no plaintext .v file written)       |   |
 |                               |                                       |   |
+|                               |  ~/lab/.build/  (tmpfs — `make` only, |   |
+|                               |    used briefly, shredded right       |   |
+|                               |    after iverilog compiles)           |   |
 |                               |  Browser VNC desktop (noVNC 6080)    |   |
 |                               +---------------------------------------+   |
 +--------------------------------------------------------------------------+
@@ -72,14 +79,16 @@ an environment variable in the container, so `docker inspect` reveals nothing us
 | File / Service | Repo | Role |
 |---|---|---|
 | `tools/encrypt_lab.sh` | chipcraft-lab | Teacher encrypts `.v` files on their PC |
-| `tools/decrypt_watch.sh` | chipcraft-lab | Container — decrypts on startup, re-encrypts on save |
+| `tools/chipcraft-key-init.sh` | chipcraft-lab | Container — fetches the key once, writes `~/.chipcraft_key` (mode 600) |
+| `tools/chipcraft-tree.sh` | chipcraft-lab | Container — decrypts/shreds a whole subtree (for multi-file Perl/bash build flows like `tarang2_dp1`) |
+| `tools/chipcraft-crypt.vim` | chipcraft-lab | System-wide gvim plugin — decrypts/encrypts `*.v.enc` in memory, no plaintext file ever written |
 | `tools/watermark.py` | chipcraft-lab | Embeds / reads invisible trailing-space watermark |
 | `tools/detect_leak.sh` | chipcraft-lab | Teacher tool — identifies student from a leaked file |
 | `tools/git-wrapper.sh` | chipcraft-lab | Installed as `/usr/local/bin/git` — blocks git outside `~/lab/` |
 | `api/main.py` | chipcraft-lab | FastAPI — GitHub OAuth, container launch, key delivery |
 | `router/app.py` | chipcraft-lab | Load balancer across student containers |
 | `Dockerfile` | chipcraft-lab | Builds student desktop image (XFCE + VNC + Verilator) |
-| `entrypoint.sh` | chipcraft-lab | Container startup — VNC, firewall, decrypt_watch |
+| `entrypoint.sh` | chipcraft-lab | Container startup — VNC, firewall, key fetch |
 | `docker-compose.yml` | chipcraft-lab | Defines API service and build targets |
 | `.env` | server only | Server-side secrets — never committed |
 | `*.v.enc` | chipcraft-lab-files | Encrypted Verilog lab files |
@@ -173,12 +182,13 @@ Priority 1 — Server Mode (API bootstrap token)
   API validates the one-time token and returns CHIPCRAFT_KEY
 
 Priority 2 — Codespace / Local Docker (Cloudflare Worker)
-  setup.sh or decrypt_watch.sh sends CLASS_TOKEN to Cloudflare Worker
+  setup.sh or chipcraft-key-init.sh sends CLASS_TOKEN to Cloudflare Worker
   Worker validates CLASS_TOKEN and returns CHIPCRAFT_KEY
-  CHIPCRAFT_KEY is never stored in any environment variable
+  CHIPCRAFT_KEY is never stored in any environment variable —
+  chipcraft-key-init.sh writes it straight to ~/.chipcraft_key (mode 600)
 
 Priority 3 — Codespace fallback (CHIPCRAFT_KEY direct env var)
-  If CHIPCRAFT_KEY is set as a Codespace secret, decrypt_watch.sh reads it
+  If CHIPCRAFT_KEY is set as a Codespace secret, chipcraft-key-init.sh reads it
 
 Priority 4 — Development / testing (LAB_KEY env var)
   If LAB_KEY is set locally, use it for local testing
@@ -207,7 +217,7 @@ Teacher sets two secrets in Cloudflare dashboard:
 Student container has CLASS_TOKEN in its environment:
   (visible in docker inspect, but harmless — it is just a door pass)
 
-When decrypt_watch.sh needs the key:
+When chipcraft-key-init.sh needs the key:
   POST https://chipcraft-key.nagajyothibonthagorla.workers.dev
   Body: { "class_token": "vlsi2026", "user": "student_github_name" }
 
@@ -247,7 +257,7 @@ export default {
      CLASS_TOKEN   = vlsi2026        (give this to students)
      CHIPCRAFT_KEY = your-key        (keep this to yourself)
 5. Update WORKER_URL in:
-     NVR/tools/decrypt_watch.sh
+     NVR/tools/chipcraft-key-init.sh
      chipcraft-student/.devcontainer/setup.sh
 ```
 
@@ -269,21 +279,25 @@ export default {
    API launches student container with BOOTSTRAP_TOKEN only
    (CHIPCRAFT_KEY is NOT passed to the student container)
 
-6. Container starts -> decrypt_watch.sh runs
+6. Container starts -> chipcraft-key-init.sh runs
 
-7. decrypt_watch.sh calls:
+7. chipcraft-key-init.sh calls:
    POST http://api:8000/lab-key  { "token": "<BOOTSTRAP_TOKEN>" }
    (over internal Docker network — not reachable from student browser)
 
 8. API validates: IP check + not expired + single-use
 
-9. API returns CHIPCRAFT_KEY; decrypt_watch.sh stores it in bash variable;
-   BOOTSTRAP_TOKEN immediately unset from environment
+9. API returns CHIPCRAFT_KEY; chipcraft-key-init.sh writes it to
+   ~/.chipcraft_key (mode 600, owned by ubuntu); BOOTSTRAP_TOKEN immediately
+   unset from environment
 
-10. openssl decrypts ~/lab/counter.v.enc -> ~/labs/counter.v  (tmpfs RAM)
-    Invisible watermark embedded in the decrypted file
+10. Student opens ~/lab/counter.v.enc in gvim. The chipcraft-crypt.vim plugin
+    reads ~/.chipcraft_key, pipes the buffer through openssl, embeds the
+    invisible watermark — all inside the editor buffer. No plaintext .v file
+    is written to disk.
 
-11. Student opens ~/labs/counter.v and starts working
+11. Student edits in gvim; `:w` pipes the buffer back through openssl and
+    overwrites ~/lab/counter.v.enc directly.
 ```
 
 ### Why students cannot steal the key
@@ -295,69 +309,123 @@ export default {
 | Copy `.v.enc` file and decrypt | They do not have the key |
 | Read `.env` file | On the server — not inside the container |
 | `docker inspect api` | Requires Docker daemon access — students do not have it |
+| `cat ~/.chipcraft_key` | **Not blocked** — same Linux user as gvim, so the key is readable by design. The point of this file is keeping the key off `env`/`docker inspect`, not hiding it from the student's own shell — that's structurally impossible once the same user must decrypt their own files. |
 
 ---
 
 ## Decryption — Inside the Container
 
-`decrypt_watch.sh` runs as a background process inside every student container.
+There are two separate decrypt paths now: **editing** (gvim, always in-memory)
+and **compiling** (`make`, which needs a real file for `iverilog` to read).
 
-### On container startup
+### Editing — gvim, in memory, no plaintext file ever
+
+`chipcraft-key-init.sh` runs once at container startup and writes the key to
+`~/.chipcraft_key` (mode 600). The `chipcraft-crypt.vim` plugin (loaded
+system-wide for every user) hooks `*.v.enc` files:
 
 ```
-~/lab/counter.v.enc       (student git repo)
+Student runs:  gvim ~/lab/counter.v.enc
          |
-         |  openssl dec -k "$KEY"
+         |  BufReadCmd fires — plugin reads ~/.chipcraft_key
+         |  openssl enc -d -k "$KEY"   (piped straight into the buffer)
          |  watermark.py encode "@github_user"
          v
-~/labs/counter.v          (tmpfs — RAM only, never touches disk)
-~/labs/tb_counter.v
-~/labs/Makefile           (copied from ~/lab/)
+Plaintext exists only inside gvim's buffer.
+swapfile / backup / undofile are disabled for this buffer — Vim itself
+never spills it to disk either.
+
+Student edits, then :w
+         |
+         |  BufWriteCmd fires — buffer piped through openssl
+         v
+~/lab/counter.v.enc   (overwritten directly — no intermediate plaintext file)
 ```
 
-### On every student save
+New designs work the same way — `gvim ~/lab/mywork/my_adder.v.enc` on a
+filename that doesn't exist yet creates it; `:w` encrypts straight to that path.
+
+### Compiling — decrypt just-in-time, shred immediately
+
+`iverilog`/`vvp`/`gtkwave` are separate processes; they can only read real
+files. `make` (in `chipcraft-lab-files/Makefile`) bridges this gap with the
+smallest possible exposure window:
 
 ```
-Student saves ~/labs/counter.v         (teacher lab file)
+make / make wave / make run FILE=counter
          |
-         |  inotifywait detects close_write
+         |  _decrypt: openssl enc -d -k "$(cat ~/.chipcraft_key)"
          v
-openssl enc -k "$KEY"
+~/lab/.build/*.v   (tmpfs — exists only for the few seconds iverilog runs)
          |
+         |  iverilog -o sim.vvp *.v
          v
-~/lab/counter.v.enc       (updated — matching .enc existed in ~/lab/)
-
-Student saves ~/labs/my_adder.v        (student new file)
+~/lab/.build/sim.vvp   (compiled bytecode — kept)
          |
-         |  inotifywait detects close_write
+         |  _shred: shred -u ~/lab/.build/*.v   (runs even if compile failed)
          v
-openssl enc -k "$KEY"
-         |
-         v
-~/lab/mywork/my_adder.v.enc   (created in mywork/ — no prior .enc existed)
-         |
-         v
-cd ~/lab && git add mywork/my_adder.v.enc && git push
+~/lab/.build/*.v no longer exists — only the compiled .vvp and any .vcd remain
 ```
 
-### tmpfs — why it matters
+### Multi-file projects — chipcraft-tree (e.g. tarang2_dp1)
 
-`/home/ubuntu/labs` is a **RAM-only filesystem** (tmpfs, 100 MB).
+Some lab content isn't a single-file `make` away from compiling — `tarang2_dp1`
+is a full 8051-style CPU core with its own Perl/bash-driven build and
+regression scripts (`compile.pl`, `regress.pl`, `bash_proj`, …), which are
+themselves encrypted and need a whole subtree of real files, at their real
+relative paths, coexisting on disk at once. Neither gvim (one file, in
+memory) nor the `Makefile` (one flattened batch, for `iverilog`) covers that.
+`chipcraft-tree` decrypts/shreds an entire subtree instead:
 
-- Decrypted `.v` files exist **only in memory** while the container runs
-- When the container stops, they vanish automatically
-- No plaintext is ever written to the host disk or the Docker volume
+```bash
+chipcraft-tree shell tarang2_dp1   # decrypts ~/lab/tarang2_dp1 -> ~/lab/.build/tarang2_dp1
+                                    # (preserving directory structure) and drops you into
+                                    # a subshell already cd'd into it
 
-### Which files get encrypted on save
+cd tarang/verilator/
+bash ../scripts/bash_proj
+perl ../scripts/compile.pl
+perl ../scripts/regress.pl -r
 
-Every `.v` file save is encrypted. Teacher files update their existing `.enc` in `~/lab/`; student-created new files are encrypted into `~/lab/mywork/`.
+exit                                # auto-shreds the whole decrypted tree on the way out
+```
 
-| File saved | `~/lab/*.v.enc` exists? | Action |
+`shell` is the recommended form — it decrypts, then registers a `trap ... EXIT`
+that shreds automatically when you exit the subshell (whether by `exit`,
+Ctrl-D, or most signals), so there's no separate step to forget. A `start`
+(decrypt only) / `stop` (shred only) pair also exists for scripted,
+non-interactive use, but a forgotten `stop` after `start` leaves real
+plaintext sitting on disk for however long the rest of the session runs —
+prefer `shell` unless you have a specific scripted reason not to.
+
+Honest tradeoff either way: a `make` compile shreds plaintext after a few
+seconds; a `chipcraft-tree` session stays decrypted for as long as the
+subshell is open — a regression run can take minutes. Still far better than
+the old model (decrypt everything, leave it for the entire container
+lifetime), and the one true limit — a `kill -9` on the subshell can't be
+trapped by any process — is a kernel-level constraint, not specific to this
+tool.
+
+### tmpfs — why it still matters
+
+`/home/ubuntu/lab/.build` is still a **RAM-only filesystem** (tmpfs, 100 MB), nested
+inside `~/lab` rather than a sibling folder — one directory for students to
+think about, not two confusingly-similar names. Its role has shrunk: it now
+only ever holds plaintext `.v` source for the duration
+of one `make` invocation, not for the whole session. Compiled `.vvp`/`.vcd`
+output (not readable source) is what persists there between builds.
+
+### Which files get re-encrypted on save
+
+Every `:w` in gvim re-encrypts. Teacher files update their existing `.enc` in
+`~/lab/`; student-created new files are saved directly to `~/lab/mywork/`.
+
+| File opened in gvim | `~/lab/*.v.enc` exists? | `:w` writes to |
 |---|---|---|
-| `counter.v` (teacher lab file) | Yes | Re-encrypted → `~/lab/counter.v.enc` |
-| `tb_counter.v` (teacher lab file) | Yes | Re-encrypted → `~/lab/tb_counter.v.enc` |
-| `my_adder.v` (student new file) | No | Encrypted → `~/lab/mywork/my_adder.v.enc` |
-| `seq_circuit.v` (student new file) | No | Encrypted → `~/lab/mywork/seq_circuit.v.enc` |
+| `~/lab/counter.v.enc` (teacher lab file) | Yes | `~/lab/counter.v.enc` |
+| `~/lab/tb_counter.v.enc` (teacher lab file) | Yes | `~/lab/tb_counter.v.enc` |
+| `~/lab/mywork/my_adder.v.enc` (student new file) | No | `~/lab/mywork/my_adder.v.enc` (created) |
+| `~/lab/mywork/seq_circuit.v.enc` (student new file) | No | `~/lab/mywork/seq_circuit.v.enc` (created) |
 
 ---
 
@@ -383,7 +451,9 @@ outside the lab repository.
 ### Without the wrapper, a student could
 
 ```bash
-cd ~/labs                   # decrypted files are here
+cd ~/lab/.build              # decrypted files briefly live here during `make`
+                              # (git wrapper's "outside ~/lab" check doesn't help here —
+                              #  .gitignore + the pre-commit hook are what actually block this)
 git init                    # creates a new repo
 git add counter.v           # stages the decrypted file
 git commit -m "stolen"
@@ -405,7 +475,7 @@ not writable by the `ubuntu` user. Students cannot modify or delete it.
 
 ### Internal tools bypass the wrapper
 
-`setup.sh` and `decrypt_watch.sh` call `/usr/bin/git` directly (not the wrapper)
+`setup.sh` and `chipcraft-key-init.sh` call `/usr/bin/git` directly (not the wrapper)
 so that automated cloning and pushing of encrypted files works correctly.
 
 ---
@@ -420,7 +490,8 @@ so that automated cloning and pushing of encrypted files works correctly.
 3. Click Code -> Open in Codespace
 4. Wait ~2 minutes for the container to start
 5. The XFCE desktop opens automatically in your browser (port 6080)
-6. Open terminal -> cd ~/labs && make
+6. Open terminal -> cd ~/lab && gvim counter.v.enc   (edits in place, in memory)
+7. To compile/simulate: cd ~/lab && make
 ```
 
 How setup.sh works when you attach:
@@ -430,14 +501,12 @@ postAttachCommand fires (runs AFTER Codespace secrets are injected):
   |
   +-- git clone chipcraft-lab-files -> ~/lab/
   |
-  +-- Sends CLASS_TOKEN to Cloudflare Worker
-  |     -> Worker validates CLASS_TOKEN
-  |     -> Returns CHIPCRAFT_KEY (stored as LAB_KEY — not kept in env after use)
+  +-- Runs chipcraft-key-init.sh:
+  |     -> Sends CLASS_TOKEN to Cloudflare Worker
+  |     -> Worker validates CLASS_TOKEN, returns CHIPCRAFT_KEY
+  |     -> Writes key to ~/.chipcraft_key (mode 600) — not kept in env
   |
-  +-- Kills earlier decrypt_watch (started before ~/lab/ existed)
-  +-- Restarts decrypt_watch.sh with LAB_KEY exported to subprocess
-  |
-  +-- ~/labs/ fills with decrypted .v files
+  +-- gvim now decrypts/encrypts *.v.enc files transparently, in memory
 ```
 
 > **postAttachCommand** is used (not postStartCommand) because Codespace secrets
@@ -451,19 +520,39 @@ docker run -d \
   -p 6080:6080 \
   -e CLASS_TOKEN=vlsi2026 \
   -e GITHUB_USER=your_github_name \
+  --tmpfs /home/ubuntu/lab/.build:size=100m,uid=1000,gid=1000,mode=0700 \
   ghcr.io/narrave/chipcraft:latest
 # Open http://localhost:6080 in your browser
 ```
 
+The `--tmpfs` flag is required — without it, `~/lab/.build` (used briefly during
+`make` to hold plaintext just long enough for `iverilog` to compile) would
+be a normal directory on the container's writable disk layer instead of
+RAM-only, the same way it already is in Server Mode.
+
+`entrypoint.sh` clones `chipcraft-lab-files` into `~/lab` automatically on
+first start (only when `BOOTSTRAP_TOKEN` isn't set, i.e. not Server Mode) —
+no manual clone step needed. `CLASS_TOKEN` is already present at container
+start (passed via `-e`), so the key fetch succeeds immediately, unlike
+Codespace Mode where it has to wait for `postAttachCommand`.
+
 The container fetches the key from the Cloudflare Worker using CLASS_TOKEN.
 
-### Edit and compile (all modes)
+### Edit (all modes)
 
 ```bash
-cd ~/labs
-make              # compile + simulate
-make wave         # compile + simulate + open GTKWave
-make clean        # remove build outputs
+cd ~/lab
+gvim counter.v.enc      # decrypts into the buffer, watermarked, in memory
+:w                       # re-encrypts straight back to counter.v.enc
+```
+
+### Compile and simulate (all modes)
+
+```bash
+cd ~/lab                 # or chipcraft-lab-files checkout
+make              # decrypts to tmpfs just-in-time, compiles, shreds plaintext immediately
+make wave         # same, + opens GTKWave
+make clean        # remove build outputs (compiled .vvp/.vcd only)
 ```
 
 ### Save lab work to GitHub
@@ -478,10 +567,9 @@ git push
 ### Save your own files (mywork/)
 
 ```bash
-# Create your file anywhere in ~/labs/
-cd ~/labs
-vim my_adder.v
-# decrypt_watch.sh automatically encrypts it -> ~/lab/mywork/my_adder.v.enc
+# Create and edit a new design directly as an encrypted file
+cd ~/lab/mywork
+gvim my_adder.v.enc     # new filename — :w creates it, encrypted, in mywork/
 
 # Commit the encrypted version to GitHub
 cd ~/lab
@@ -490,7 +578,8 @@ git commit -m "my adder design"
 git push
 ```
 
-Student-created files are auto-encrypted to `~/lab/mywork/*.v.enc` on every save.
+Student-created files live directly in `~/lab/mywork/*.v.enc` — there's no
+intermediate plaintext copy to auto-encrypt, since gvim never created one.
 Only `.enc` files can be committed — the pre-commit hook blocks any plain `.v` or other file type.
 The hook lives in the Docker image at `/usr/local/lib/chipcraft-hooks/pre-commit` (root-owned) so students cannot edit or delete it.
 
@@ -514,8 +603,8 @@ PORT_END=6180
 
 ### 2. Get the Docker image (GitHub Actions builds it automatically)
 
-Every push to `master` that touches `Dockerfile`, `entrypoint.sh`, or
-`tools/decrypt_watch.sh` triggers **GitHub Actions -> Publish Docker Image**
+Every push to `master` that touches `Dockerfile`, `entrypoint.sh`,
+`tools/chipcraft-key-init.sh`, or `tools/chipcraft-crypt.vim` triggers **GitHub Actions -> Publish Docker Image**
 which builds and pushes `ghcr.io/narrave/chipcraft:latest` automatically.
 
 ```bash
@@ -580,21 +669,25 @@ cd chipcraft-lab-files && git add *.v.enc && git commit -m "lab1" && git push
 /home/ubuntu/
 |
 +-- lab/                        <- git repo (persistent)
-|   +-- counter.v.enc           <- re-encrypted on every student save
+|   +-- counter.v.enc           <- re-encrypted by gvim on every :w
 |   +-- tb_counter.v.enc
 |   +-- Makefile
 |   +-- .gitignore              <- blocks all files; only *.enc allowed
-|   +-- mywork/                 <- student work (auto-encrypted on save)
-|       +-- my_adder.v.enc      <- only .enc files here, committed to git
+|   +-- mywork/                 <- student's own designs
+|   |   +-- my_adder.v.enc      <- only .enc files here, committed to git
+|   |
+|   +-- .build/                 <- tmpfs (RAM only — vanishes when container stops)
+|       +-- sim.vvp             <- generated by iverilog (compiled bytecode, kept)
+|       +-- counter.vcd         <- generated by simulation, opened in GTKWave
+|       (counter.v / tb_counter.v exist here only for the few seconds `make`
+|        takes to compile — shredded immediately after iverilog exits)
 |
-+-- labs/                       <- tmpfs (RAM only — vanishes when container stops)
-    +-- counter.v               <- decrypted, watermarked — student edits here
-    +-- tb_counter.v
-    +-- my_adder.v              <- student file (auto-encrypted to ~/lab/mywork/)
-    +-- Makefile                <- copied from ~/lab/ at startup
-    +-- sim.vvp                 <- generated by iverilog
-    +-- counter.vcd             <- generated by simulation, opened in GTKWave
++-- .chipcraft_key              <- decryption key, mode 600 (read by gvim plugin)
 ```
+
+Plaintext `.v` source is never written to `~/lab/.build/` for editing anymore —
+that only happens transiently during `make`. Editing happens entirely inside gvim's
+buffer; see the Decryption section above.
 
 ---
 
@@ -603,14 +696,16 @@ cd chipcraft-lab-files && git add *.v.enc && git commit -m "lab1" && git push
 | Attack method | Blocked? | How |
 |---|---|---|
 | **noVNC clipboard** copy | Blocked | `-noclipboard` on Xvnc server |
-| **git push decrypted files** from `~/labs/` | Blocked | git wrapper blocks `git add` outside `~/lab/` |
+| **git push decrypted files** from `~/lab/.build/` | Blocked | `.build/` is inside `~/lab` so the wrapper's "outside ~/lab" check doesn't apply here — instead `.gitignore` silently ignores plain `.v` files, and the pre-commit hook blocks any non-`.enc` add even with `-f` |
 | **git init** anywhere | Blocked | git wrapper blocks `git init` everywhere |
 | **git clone** to push to a private repo | Blocked | git wrapper blocks `git clone` everywhere |
 | **curl / wget** to paste sites | Blocked | Egress firewall — only GitHub IPs allowed |
 | **Browser inside VNC** to Google Drive, email | Blocked | Egress firewall |
 | **`docker inspect`** to see CHIPCRAFT_KEY | Not possible | Key delivered via Cloudflare Worker — never an env var in the container |
 | **`echo $CLASS_TOKEN`** | Visible | CLASS_TOKEN is a door pass, not the key — harmless |
-| **`docker cp`** from host | Admin only | Requires Docker daemon access |
+| **`docker cp ~/lab/*.enc`** | Blocked | Ciphertext only — useless without the key |
+| **`docker cp ~/lab/.build/*.v`** | Blocked (almost always) | No plaintext `.v` file exists there except for the few seconds a `make` is actively compiling |
+| **`cat ~/.chipcraft_key`** | Not possible to block | Same Linux user as gvim — see note in the key-delivery table above |
 | **Phone photo / screen recording** | Cannot block | Watermark identifies the student |
 | **Manual typing** the code | Cannot block | Watermark + academic integrity policy |
 
@@ -672,15 +767,15 @@ BLOCKED outbound:
 CHIPCRAFT_KEY journey (Codespace / Local Docker):
   Cloudflare Worker secrets (teacher access only)
     -> POST /worker (CLASS_TOKEN validated, CHIPCRAFT_KEY returned in response)
-      -> bash variable in decrypt_watch.sh (~2 seconds)
-        -> openssl stdin  ->  GONE
+      -> bash variable in chipcraft-key-init.sh (~2 seconds)
+        -> written to ~/.chipcraft_key (mode 600)  ->  read by gvim plugin per file
 
 CHIPCRAFT_KEY journey (Server Mode):
   .env (server — teacher access only)
     -> API memory
       -> POST /lab-key (internal network, one-time token, 30s TTL)
-        -> bash variable in decrypt_watch.sh
-          -> openssl stdin  ->  GONE
+        -> bash variable in chipcraft-key-init.sh
+          -> written to ~/.chipcraft_key (mode 600)  ->  read by gvim plugin per file
 
 CLASS_TOKEN (Codespace / Local Docker):
   Visible in student environment.
@@ -688,8 +783,13 @@ CLASS_TOKEN (Codespace / Local Docker):
   Students can see it but cannot use it to obtain CHIPCRAFT_KEY directly.
   The Cloudflare Worker validates it but never exposes the key elsewhere.
 
-Decrypted .v files:
-  ~/labs/ (tmpfs, RAM only)  ->  watermarked per student  ->  GONE on container stop
+Decrypted .v content while editing:
+  Exists only inside gvim's buffer (openssl pipe in, openssl pipe out on :w)
+  No plaintext file written, ever  ->  swapfile/backup/undofile disabled too
+
+Decrypted .v files while compiling:
+  ~/lab/.build/ (tmpfs, RAM only)  ->  exists only for the duration of one `make`
+  call  ->  shredded the moment iverilog exits, success or failure
 
 Encrypted .v.enc files:
   chipcraft-lab-files repo + ~/lab/ volume  ->  safe anywhere  ->  useless without key

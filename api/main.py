@@ -97,7 +97,7 @@ def _launch_container(github_user: str, port: int, session_token: str) -> str:
             "BOOTSTRAP_TOKEN":  boot_token,
             "API_INTERNAL_URL": "http://api:8000",
             "WORK_DIR":         "/home/ubuntu/lab",
-            "LAB_DIR":          "/home/ubuntu/labs",
+            "LAB_DIR":          "/home/ubuntu/lab/.build",
             # Used to watermark decrypted files so leaks can be traced
             "GITHUB_USER":      github_user,
         },
@@ -105,8 +105,9 @@ def _launch_container(github_user: str, port: int, session_token: str) -> str:
             SHARED_PATH: {"bind": "/home/ubuntu/shared", "mode": "ro"},
             vol:         {"bind": "/home/ubuntu/work",   "mode": "rw"},
         },
-        # Decrypted .v files live in RAM only — never touch disk
-        tmpfs={"/home/ubuntu/labs": "size=100m,uid=1000,gid=1000,mode=0700"},
+        # Build scratch space, nested inside ~/lab rather than a sibling
+        # folder. RAM only (tmpfs) — plaintext from `make` never touches disk.
+        tmpfs={"/home/ubuntu/lab/.build": "size=100m,uid=1000,gid=1000,mode=0700"},
         # Join the compose network so the container can reach http://api:8000
         network=COMPOSE_NETWORK,
         # Needed so entrypoint.sh can apply egress iptables rules
