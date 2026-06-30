@@ -96,7 +96,7 @@ echo "Lab desktop ready on port $NOVNC_PORT"
 if [[ -z "${BOOTSTRAP_TOKEN:-}" && ! -d "$HOME/lab/.git" ]]; then
     echo "[lab] Cloning chipcraft-lab-files -> ~/lab …" >> /tmp/lab-crypto.log
     # Clone into a temp dir, then merge into ~/lab — cloning directly into
-    # ~/lab fails because the .build tmpfs mount (declared at container
+    # ~/lab fails because the build tmpfs mount (declared at container
     # creation) already exists there, making git see a "non-empty" target.
     # /usr/bin/git directly — /usr/local/bin/git (the wrapper) blocks `clone` outright.
     TMPCLONE=$(mktemp -d)
@@ -124,6 +124,14 @@ fi
 # buffer I/O; this catches what that can't, auto-encrypting and shredding
 # any bare plaintext file the instant it shows up. Same log as above.
 /usr/local/bin/chipcraft-sweep.sh >> /tmp/lab-crypto.log 2>&1 &
+
+# Decrypt every *.enc under ~/lab into ~/lab/build once, up front, and
+# leave it there for the whole session — DELIBERATE TRADEOFF, see the
+# script's own header comment. Waits for the key itself, so this is safe to
+# background; in Codespace mode the key isn't available yet at this point
+# (CLASS_TOKEN arrives after attach), so setup.sh also calls this again
+# once the key is actually ready there.
+/usr/local/bin/chipcraft-decrypt-all.sh >> /tmp/lab-crypto.log 2>&1 &
 
 # Keep container alive
 exec tail -f /dev/null

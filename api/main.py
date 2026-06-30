@@ -97,7 +97,7 @@ def _launch_container(github_user: str, port: int, session_token: str) -> str:
             "BOOTSTRAP_TOKEN":  boot_token,
             "API_INTERNAL_URL": "http://api:8000",
             "WORK_DIR":         "/home/ubuntu/lab",
-            "LAB_DIR":          "/home/ubuntu/lab/.build",
+            "LAB_DIR":          "/home/ubuntu/lab/build",
             # Used to watermark decrypted files so leaks can be traced
             "GITHUB_USER":      github_user,
         },
@@ -111,7 +111,7 @@ def _launch_container(github_user: str, port: int, session_token: str) -> str:
         # files for a full RTL project) need much more than a single
         # iverilog compile of one file ever did. tmpfs is a ceiling, not a
         # reservation — only consumes RAM as data is actually written.
-        tmpfs={"/home/ubuntu/lab/.build": "size=2g,uid=1000,gid=1000,mode=0700"},
+        tmpfs={"/home/ubuntu/lab/build": "size=2g,uid=1000,gid=1000,mode=0700"},
         # Join the compose network so the container can reach http://api:8000
         network=COMPOSE_NETWORK,
         # Needed so entrypoint.sh can apply egress iptables rules
@@ -135,7 +135,7 @@ def _clone_repo(container_id: str, github_user: str, github_token: str, template
     try:
         container = dc.containers.get(container_id)
         # Clone into a temp dir then merge into ~/lab — cloning directly
-        # into ~/lab (or rm -rf'ing it first) fails because the .build
+        # into ~/lab (or rm -rf'ing it first) fails because the build
         # tmpfs mount (declared at container creation) already exists
         # there; rm -rf can't remove an active mount point either, so it
         # would survive the wipe and still block a direct clone right after.

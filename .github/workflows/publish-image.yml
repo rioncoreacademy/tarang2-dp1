@@ -10,6 +10,7 @@ on:
       - novnc-index.html
       - tools/chipcraft-key-init.sh
       - tools/chipcraft-tree.sh
+      - tools/chipcraft-decrypt-all.sh
       - tools/chipcraft-sweep.sh
       - tools/chipcraft-crypt.vim
 

@@ -61,7 +61,7 @@ an environment variable in the container, so `docker inspect` reveals nothing us
 |                               |  gvim decrypts *.v.enc in memory      |   |
 |                               |  (no plaintext .v file written)       |   |
 |                               |                                       |   |
-|                               |  ~/lab/.build/  (tmpfs — `make` only, |   |
+|                               |  ~/lab/build/  (tmpfs — `make` only, |   |
 |                               |    used briefly, shredded right       |   |
 |                               |    after iverilog compiles)           |   |
 |                               |  Browser VNC desktop (noVNC 6080)    |   |
@@ -80,7 +80,8 @@ an environment variable in the container, so `docker inspect` reveals nothing us
 |---|---|---|
 | `tools/encrypt_lab.sh` | chipcraft-lab | Teacher encrypts `.v` files on their PC |
 | `tools/chipcraft-key-init.sh` | chipcraft-lab | Container — fetches the key once, writes `~/.chipcraft_key` (mode 600) |
-| `tools/chipcraft-tree.sh` | chipcraft-lab | Container — decrypts/shreds a whole subtree (for multi-file Perl/bash build flows like `tarang2_dp1`) |
+| `tools/chipcraft-tree.sh` | chipcraft-lab | Container — decrypts/shreds a whole subtree on demand (session-scoped alternative; not required for `tarang2_dp1` day to day, see below) |
+| `tools/chipcraft-decrypt-all.sh` | chipcraft-lab | Container — decrypts every `.enc` under `~/lab` into `~/lab/build` once at startup, persists for the whole session (deliberate tradeoff — see "Multi-file projects" below) |
 | `tools/chipcraft-sweep.sh` | chipcraft-lab | Container — background watcher; auto-encrypts any stray plaintext that appears under `~/lab` by any means other than gvim (`cp`, `mv`, `docker cp`, …) |
 | `tools/chipcraft-crypt.vim` | chipcraft-lab | System-wide gvim plugin — decrypts/encrypts `*.v.enc` in memory, no plaintext file ever written |
 | `tools/watermark.py` | chipcraft-lab | Embeds / reads invisible trailing-space watermark |
@@ -357,18 +358,18 @@ make / make wave / make run FILE=counter
          |
          |  _decrypt: openssl enc -d -k "$(cat ~/.chipcraft_key)"
          v
-~/lab/.build/*.v   (tmpfs — exists only for the few seconds iverilog runs)
+~/lab/build/*.v   (tmpfs — exists only for the few seconds iverilog runs)
          |
          |  iverilog -o sim.vvp *.v
          v
-~/lab/.build/sim.vvp   (compiled bytecode — kept)
+~/lab/build/sim.vvp   (compiled bytecode — kept)
          |
-         |  _shred: shred -u ~/lab/.build/*.v   (runs even if compile failed)
+         |  _shred: shred -u ~/lab/build/*.v   (runs even if compile failed)
          v
-~/lab/.build/*.v no longer exists — only the compiled .vvp and any .vcd remain
+~/lab/build/*.v no longer exists — only the compiled .vvp and any .vcd remain
 ```
 
-### Multi-file projects — chipcraft-tree (e.g. tarang2_dp1)
+### Multi-file projects — chipcraft-decrypt-all (e.g. tarang2_dp1)
 
 Some lab content isn't a single-file `make` away from compiling — `tarang2_dp1`
 is a full 8051-style CPU core with its own Perl/bash-driven build and
@@ -376,36 +377,39 @@ regression scripts (`compile.pl`, `regress.pl`, `bash_proj`, …), which are
 themselves encrypted and need a whole subtree of real files, at their real
 relative paths, coexisting on disk at once. Neither gvim (one file, in
 memory) nor the `Makefile` (one flattened batch, for `iverilog`) covers that.
-`chipcraft-tree` decrypts/shreds an entire subtree instead:
 
+**`chipcraft-decrypt-all.sh` decrypts every `*.enc` under `~/lab` into
+`~/lab/build` once, automatically, at container startup — and leaves it
+there for the whole session.** No manual step, no exit-to-shred. This is a
+**deliberate security tradeoff, not an oversight**: it restores the same
+shape as the original always-decrypted model this project moved away from
+earlier in its design, chosen specifically to remove the start/work/exit
+friction that the previous session-scoped tool (`chipcraft-tree`) required
+for multi-file projects like this one.
+
+Concretely, this means:
 ```bash
-chipcraft-tree shell tarang2_dp1   # decrypts ~/lab/tarang2_dp1 -> ~/lab/.build/tarang2_dp1
-                                    # (preserving directory structure) and drops you into
-                                    # a subshell already cd'd into it
-
-cd tarang/verilator/
+cd ~/lab/build/tarang2_dp1/tarang/verilator/
 bash ../scripts/bash_proj
 perl ../scripts/compile.pl
 perl ../scripts/regress.pl -r
-
-exit                                # auto-shreds the whole decrypted tree on the way out
 ```
+— works immediately, every session, no `chipcraft-tree shell`/`exit` dance.
 
-`shell` is the recommended form — it decrypts, then registers a `trap ... EXIT`
-that shreds automatically when you exit the subshell (whether by `exit`,
-Ctrl-D, or most signals), so there's no separate step to forget. A `start`
-(decrypt only) / `stop` (shred only) pair also exists for scripted,
-non-interactive use, but a forgotten `stop` after `start` leaves real
-plaintext sitting on disk for however long the rest of the session runs —
-prefer `shell` unless you have a specific scripted reason not to.
+**What this costs**: `tarang2_dp1`'s real plaintext source sits on disk in
+`~/lab/build` for the *entire container lifetime*, not just during a brief
+compile or an explicitly-open session. `docker cp`, the terminal, or any
+other filesystem access can read it at any time. This is the same exposure
+the rest of this document describes closing for the simple `counter.v` lab
+(via `make`'s decrypt-compile-shred) and for editing (via gvim's in-memory
+model) — those two are unaffected by this change and remain narrow-window/
+in-memory only. Only the bulk multi-file-project content in `build` is
+now persistently decrypted.
 
-Honest tradeoff either way: a `make` compile shreds plaintext after a few
-seconds; a `chipcraft-tree` session stays decrypted for as long as the
-subshell is open — a regression run can take minutes. Still far better than
-the old model (decrypt everything, leave it for the entire container
-lifetime), and the one true limit — a `kill -9` on the subshell can't be
-trapped by any process — is a kernel-level constraint, not specific to this
-tool.
+`chipcraft-tree` (`shell`/`start`/`stop`) still exists and still works
+exactly as before, for anyone who wants session-scoped decrypt/shred for a
+specific subtree instead of relying on the startup bulk-decrypt — it's just
+no longer required for `tarang2_dp1` day to day.
 
 ### Catching stray plaintext from cp / mv / docker cp
 
@@ -421,11 +425,11 @@ have a real race — if something like `cp -r` creates a brand-new directory
 and immediately floods it with files, the watch on that new directory may
 not be registered yet when those writes happen, and the events are lost
 entirely (a known inotify limitation, observed in practice with `cp -r`
-copying a whole directory tree out of `.build/`). The poll can't miss
+copying a whole directory tree out of `build/`). The poll can't miss
 anything for longer than 5 seconds, regardless of how fast files land.
 
 Either layer: any file under `~/lab` that isn't `*.enc`, isn't under
-`~/lab/.build/` (tmpfs build scratch) or `~/lab/.git/` (git's own internals —
+`~/lab/build/` (tmpfs build scratch) or `~/lab/.git/` (git's own internals —
 touching these would corrupt the repo), and isn't one of the allowed
 plaintext infra files (`Makefile`, `.gitignore`, `.gitattributes`, `README.md`)
 gets moved out of the watched tree, encrypted to its `.enc` counterpart, and
@@ -439,12 +443,18 @@ something this script (or any script) can close to zero.
 
 ### tmpfs — why it still matters
 
-`/home/ubuntu/lab/.build` is still a **RAM-only filesystem** (tmpfs, 2 GB ceiling — sized for Verilator builds, not just iverilog), nested
+`/home/ubuntu/lab/build` is still a **RAM-only filesystem** (tmpfs, 2 GB ceiling — sized for Verilator builds, not just iverilog), nested
 inside `~/lab` rather than a sibling folder — one directory for students to
-think about, not two confusingly-similar names. Its role has shrunk: it now
-only ever holds plaintext `.v` source for the duration
-of one `make` invocation, not for the whole session. Compiled `.vvp`/`.vcd`
-output (not readable source) is what persists there between builds.
+think about, not two confusingly-similar names.
+
+Its role differs by what put content there. For the simple `counter.v` lab,
+`make`'s decrypt-compile-shred keeps it narrow: plaintext `.v` source exists
+only for the duration of one compile, and compiled `.vvp`/`.vcd` output (not
+readable source) is what persists between builds. For multi-file projects
+like `tarang2_dp1`, `chipcraft-decrypt-all.sh` decrypts everything into here
+once at startup and leaves it for the whole session — real plaintext source,
+not just compiled output, persisting the entire time. See "Multi-file
+projects" above for why that tradeoff was chosen.
 
 ### Which files get re-encrypted on save
 
@@ -482,7 +492,7 @@ outside the lab repository.
 ### Without the wrapper, a student could
 
 ```bash
-cd ~/lab/.build              # decrypted files briefly live here during `make`
+cd ~/lab/build              # decrypted files briefly live here during `make`
                               # (git wrapper's "outside ~/lab" check doesn't help here —
                               #  .gitignore + the pre-commit hook are what actually block this)
 git init                    # creates a new repo
@@ -551,7 +561,7 @@ docker run -d \
   -p 6080:6080 \
   -e CLASS_TOKEN=vlsi2026 \
   -e GITHUB_USER=your_github_name \
-  --tmpfs /home/ubuntu/lab/.build:size=2g,uid=1000,gid=1000,mode=0700 \
+  --tmpfs /home/ubuntu/lab/build:size=2g,uid=1000,gid=1000,mode=0700 \
   ghcr.io/narrave/chipcraft:latest
 # Open http://localhost:6080 in your browser
 ```
@@ -561,7 +571,7 @@ files for a full RTL project) need much more scratch space than a single
 `iverilog` compile of one file ever did. tmpfs is a ceiling, not a
 reservation — it only consumes RAM as data is actually written.
 
-The `--tmpfs` flag is required — without it, `~/lab/.build` (used briefly during
+The `--tmpfs` flag is required — without it, `~/lab/build` (used briefly during
 `make` to hold plaintext just long enough for `iverilog` to compile) would
 be a normal directory on the container's writable disk layer instead of
 RAM-only, the same way it already is in Server Mode.
@@ -712,7 +722,7 @@ cd chipcraft-lab-files && git add *.v.enc && git commit -m "lab1" && git push
 |   +-- mywork/                 <- student's own designs
 |   |   +-- my_adder.v.enc      <- only .enc files here, committed to git
 |   |
-|   +-- .build/                 <- tmpfs (RAM only — vanishes when container stops)
+|   +-- build/                 <- tmpfs (RAM only — vanishes when container stops)
 |       +-- sim.vvp             <- generated by iverilog (compiled bytecode, kept)
 |       +-- counter.vcd         <- generated by simulation, opened in GTKWave
 |       (counter.v / tb_counter.v exist here only for the few seconds `make`
@@ -721,7 +731,7 @@ cd chipcraft-lab-files && git add *.v.enc && git commit -m "lab1" && git push
 +-- .chipcraft_key              <- decryption key, mode 600 (read by gvim plugin)
 ```
 
-Plaintext `.v` source is never written to `~/lab/.build/` for editing anymore —
+Plaintext `.v` source is never written to `~/lab/build/` for editing anymore —
 that only happens transiently during `make`. Editing happens entirely inside gvim's
 buffer; see the Decryption section above.
 
@@ -732,7 +742,7 @@ buffer; see the Decryption section above.
 | Attack method | Blocked? | How |
 |---|---|---|
 | **noVNC clipboard** copy | Blocked | `-noclipboard` on Xvnc server |
-| **git push decrypted files** from `~/lab/.build/` | Blocked | `.build/` is inside `~/lab` so the wrapper's "outside ~/lab" check doesn't apply here — instead `.gitignore` silently ignores plain `.v` files, and the pre-commit hook blocks any non-`.enc` add even with `-f` |
+| **git push decrypted files** from `~/lab/build/` | Blocked | `build/` is inside `~/lab` so the wrapper's "outside ~/lab" check doesn't apply here — instead `.gitignore` silently ignores plain `.v` files, and the pre-commit hook blocks any non-`.enc` add even with `-f` |
 | **git init** anywhere | Blocked | git wrapper blocks `git init` everywhere |
 | **git clone** to push to a private repo | Blocked | git wrapper blocks `git clone` everywhere |
 | **curl / wget** to paste sites | Blocked | Egress firewall — only GitHub IPs allowed |
@@ -740,7 +750,8 @@ buffer; see the Decryption section above.
 | **`docker inspect`** to see CHIPCRAFT_KEY | Not possible | Key delivered via Cloudflare Worker — never an env var in the container |
 | **`echo $CLASS_TOKEN`** | Visible | CLASS_TOKEN is a door pass, not the key — harmless |
 | **`docker cp ~/lab/*.enc`** | Blocked | Ciphertext only — useless without the key |
-| **`docker cp ~/lab/.build/*.v`** | Blocked (almost always) | No plaintext `.v` file exists there except for the few seconds a `make` is actively compiling |
+| **`docker cp ~/lab/build/counter.v`** (simple lab, via `make`) | Blocked (almost always) | No plaintext `.v` file exists there except for the few seconds a `make` is actively compiling |
+| **`docker cp ~/lab/build/tarang2_dp1/...`** (multi-file projects) | **Not blocked — by design** | `chipcraft-decrypt-all.sh` decrypts this persistently for the whole session (deliberate tradeoff, see "Multi-file projects" above). Real plaintext source, readable at any time. |
 | **`cp`/`mv`/`docker cp` dropping plaintext into `~/lab`** | Blocked (almost always) | `chipcraft-sweep.sh` auto-encrypts and shreds any stray plaintext within moments of it appearing, regardless of how it got there — but can't beat a read happening in the exact same instant |
 | **`cat ~/.chipcraft_key`** | Not possible to block | Same Linux user as gvim — see note in the key-delivery table above |
 | **Phone photo / screen recording** | Cannot block | Watermark identifies the student |
@@ -824,9 +835,18 @@ Decrypted .v content while editing:
   Exists only inside gvim's buffer (openssl pipe in, openssl pipe out on :w)
   No plaintext file written, ever  ->  swapfile/backup/undofile disabled too
 
-Decrypted .v files while compiling:
-  ~/lab/.build/ (tmpfs, RAM only)  ->  exists only for the duration of one `make`
+Decrypted .v files while compiling (simple lab, e.g. counter.v):
+  ~/lab/build/ (tmpfs, RAM only)  ->  exists only for the duration of one `make`
   call  ->  shredded the moment iverilog exits, success or failure
+
+Decrypted source for multi-file projects (e.g. tarang2_dp1):
+  ~/lab/build/ (tmpfs, RAM only)  ->  decrypted once at startup by
+  chipcraft-decrypt-all.sh  ->  persists for the WHOLE session, not shredded
+  ->  DELIBERATE TRADEOFF: docker cp / terminal / any filesystem access can
+  read this at any time during the session — chosen to remove session-
+  management friction for multi-file build flows. chipcraft-tree (session-
+  scoped decrypt/shred) remains available for anyone who wants the narrower
+  exposure window instead.
 
 Encrypted .v.enc files:
   chipcraft-lab-files repo + ~/lab/ volume  ->  safe anywhere  ->  useless without key

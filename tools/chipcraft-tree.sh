@@ -7,7 +7,7 @@
 # compile.pl, regress.pl — themselves encrypted) need a whole subtree of
 # real files, with real relative paths, coexisting on disk at once.
 #
-# This decrypts a subtree into ~/lab/.build/<subtree> (tmpfs) so those
+# This decrypts a subtree into ~/lab/build/<subtree> (tmpfs) so those
 # scripts run completely unmodified, and shreds the whole thing back to
 # nothing afterward — same principle as the Makefile's decrypt/shred,
 # generalized to many files instead of one.
@@ -17,7 +17,7 @@
 #                                      subshell cd'd into it, auto-shred on exit
 #   chipcraft-tree start tarang2_dp1   decrypt only — for scripted/non-interactive
 #                                      use; YOU must remember to run `stop`
-#   chipcraft-tree stop  tarang2_dp1   shred ~/lab/.build/tarang2_dp1
+#   chipcraft-tree stop  tarang2_dp1   shred ~/lab/build/tarang2_dp1
 #
 # `shell` is preferred: a forgotten `stop` after `start` leaves real plaintext
 # sitting on disk for however long the rest of the session runs. `shell`
@@ -31,7 +31,7 @@
 set -euo pipefail
 
 WORK="${WORK:-$HOME/lab}"
-BUILD="${BUILD:-$WORK/.build}"
+BUILD="${BUILD:-$WORK/build}"
 KEYFILE="$HOME/.chipcraft_key"
 
 usage() {

@@ -93,7 +93,7 @@ ENV PATH="/opt/oss-cad-suite/bin:$PATH"
 RUN useradd -m -s /bin/bash ubuntu
 
 # Create ~/lab and own it as ubuntu *before* any tmpfs mount is declared at
-# /home/ubuntu/lab/.build. Without this, Docker/Codespaces auto-creates the
+# /home/ubuntu/lab/build. Without this, Docker/Codespaces auto-creates the
 # missing parent directory itself to attach that mount — as root, with
 # default 0755 — and ubuntu is left with read+execute but no write on ~/lab
 # itself, breaking every clone/touch/mv into it. ubuntu's sudo is locked to
@@ -104,8 +104,9 @@ RUN mkdir -p /home/ubuntu/lab && chown ubuntu:ubuntu /home/ubuntu/lab
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-COPY tools/chipcraft-key-init.sh   /usr/local/bin/chipcraft-key-init.sh
-COPY tools/chipcraft-tree.sh      /usr/local/bin/chipcraft-tree
+COPY tools/chipcraft-key-init.sh    /usr/local/bin/chipcraft-key-init.sh
+COPY tools/chipcraft-tree.sh        /usr/local/bin/chipcraft-tree
+COPY tools/chipcraft-decrypt-all.sh /usr/local/bin/chipcraft-decrypt-all.sh
 COPY tools/chipcraft-sweep.sh     /usr/local/bin/chipcraft-sweep.sh
 COPY tools/watermark.py           /usr/local/bin/watermark.py
 COPY tools/git-wrapper.sh         /usr/local/bin/git
@@ -117,6 +118,7 @@ COPY tools/chipcraft-gitignore    /etc/chipcraft-gitignore
 COPY tools/chipcraft-crypt.vim    /usr/share/vim/vimfiles/plugin/chipcraft-crypt.vim
 RUN chmod +x /usr/local/bin/chipcraft-key-init.sh \
              /usr/local/bin/chipcraft-tree \
+             /usr/local/bin/chipcraft-decrypt-all.sh \
              /usr/local/bin/chipcraft-sweep.sh \
              /usr/local/bin/watermark.py \
              /usr/local/bin/git \

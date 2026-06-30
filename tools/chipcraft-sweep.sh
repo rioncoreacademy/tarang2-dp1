@@ -5,7 +5,7 @@
 # chipcraft-crypt.vim only intercepts Vim's own buffer I/O (BufReadCmd /
 # BufWriteCmd) — it has no visibility into files written by other tools.
 # This runs as a long-lived background watcher instead: any new/modified
-# file under ~/lab that isn't *.enc, isn't under ~/lab/.build/ (tmpfs build
+# file under ~/lab that isn't *.enc, isn't under ~/lab/build/ (tmpfs build
 # scratch), isn't under ~/lab/.git/ (git's own internals — touching these
 # would corrupt the repo), and isn't one of the allowed plaintext infra
 # files (Makefile, .gitignore, .gitattributes, README.md) gets encrypted to
@@ -30,7 +30,7 @@ set -uo pipefail
 
 WORK="${WORK:-$HOME/lab}"
 KEYFILE="$HOME/.chipcraft_key"
-SCRATCH="$WORK/.build/.sweep-tmp"
+SCRATCH="$WORK/build/.sweep-tmp"
 ALLOWLIST=("Makefile" ".gitignore" ".gitattributes" "README.md")
 
 mkdir -p "$SCRATCH"
@@ -48,7 +48,7 @@ _sweep_file() {
     local path="$1"
     [[ -f "$path" ]] || return 0
     case "$path" in
-        "$WORK"/.build/*) return 0 ;;   # tmpfs build scratch — exempt
+        "$WORK"/build/*)  return 0 ;;   # tmpfs build scratch — exempt
         "$WORK"/.git/*)   return 0 ;;   # git internals — never touch
         *.enc)            return 0 ;;   # already encrypted
         *.swp|*.swo|*~)   return 0 ;;   # editor temp junk, not real source
@@ -106,7 +106,7 @@ echo "[sweep] Watching $WORK for stray plaintext …"
 _poll_loop &
 
 inotifywait -m -r -e close_write,moved_to \
-    --exclude '/\.(git|build)/' \
+    --exclude '/(\.git|build)/' \
     --format '%w%f' "$WORK" 2>/dev/null \
 | while IFS= read -r changed; do
     _sweep_file "$changed"

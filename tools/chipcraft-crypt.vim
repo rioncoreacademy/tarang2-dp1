@@ -141,7 +141,7 @@ endfunction
 " chipcraft-lab-files/.gitignore already enforces at the git layer (only
 " Makefile/.gitignore/.gitattributes/README.md and *.enc are real plaintext),
 " but live in
-" the editor instead of just at commit time. ~/lab/.build/ is exempt — that's
+" the editor instead of just at commit time. ~/lab/build/ is exempt — that's
 " the tmpfs build-scratch area where transient plaintext is expected.
 
 let s:lab_root = expand('$HOME') . '/lab'
@@ -152,7 +152,7 @@ function! s:UnderLab(path)
 endfunction
 
 function! s:UnderBuild(path)
-  return a:path =~# '^' . escape(s:lab_root, '/\') . '/\.build\(/\|$\)'
+  return a:path =~# '^' . escape(s:lab_root, '/\') . '/build\(/\|$\)'
 endfunction
 
 function! s:IsAllowedPlain(path)
