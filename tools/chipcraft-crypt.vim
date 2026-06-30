@@ -175,8 +175,10 @@ endfunction
 
 function! s:GuardedRead()
   let l:path = expand('%:p')
+  " .enc files are handled by the ChipCraftCrypt group above; anything
+  " outside ~/lab entirely is none of this guard's business either.
   if l:path =~# '\.enc$' || !s:UnderLab(l:path)
-    return  " handled by the ChipCraftCrypt group above, or outside ~/lab entirely
+    return
   endif
   call s:HardenBuffer()
   call s:PassthroughRead()
