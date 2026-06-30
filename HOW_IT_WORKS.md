@@ -456,6 +456,22 @@ once at startup and leaves it for the whole session — real plaintext source,
 not just compiled output, persisting the entire time. See "Multi-file
 projects" above for why that tradeoff was chosen.
 
+**`noexec` gotcha (Codespaces specifically):** `devcontainer.json`'s `mounts`
+property uses Docker's newer `--mount` API, which applies `nosuid,nodev,noexec`
+as secure-by-default tmpfs options — and that API doesn't expose a way to
+override `exec` (only `tmpfs-size`/`tmpfs-mode` are supported through it). A
+Verilator-compiled binary sitting in `build/` would fail with "Permission
+denied" even though its own file permissions (`-rwxr-xr-x`) are completely
+correct — the filesystem itself was blocking execution, not the file. Fixed
+by switching to `runArgs` with the legacy `--tmpfs` flag instead, which
+doesn't default to `noexec`:
+```json
+"runArgs": ["--tmpfs", "/home/ubuntu/lab/build:rw,exec,size=2g,uid=1000,gid=1000,mode=0700"]
+```
+Server Mode (`api/main.py`'s `tmpfs={}` via docker-py) and the documented
+Local Docker Mode `--tmpfs` flag already use this legacy mechanism, so
+neither needed a change — this was specific to Codespaces' `mounts` property.
+
 ### Which files get re-encrypted on save
 
 Every `:w` in gvim re-encrypts. Teacher files update their existing `.enc` in
