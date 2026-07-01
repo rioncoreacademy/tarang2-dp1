@@ -220,8 +220,44 @@ function! s:GuardedWrite()
   if l:path =~# '\.enc$' || !s:UnderLab(l:path)
     return
   endif
-  if s:UnderBuild(l:path) || s:IsAllowedPlain(l:path)
+  if s:IsAllowedPlain(l:path)
     call s:PassthroughWrite()
+    return
+  endif
+  if s:UnderBuild(l:path)
+    " Editing a plaintext file directly from build/ — find the .enc
+    " counterpart in ~/lab and encrypt to it, so edits persist across
+    " container restarts. Saving from build/ should be equivalent to
+    " editing the .enc source directly — no silent lost-work trap.
+    let l:rel = l:path[len(s:lab_root . '/build/'):]
+    let l:enc_path = s:lab_root . '/' . l:rel . '.enc'
+    let l:key = s:ReadKey()
+    if empty(l:key)
+      echohl ErrorMsg | echom 'ChipCraft: no key — cannot encrypt to .enc' | echohl None
+      return
+    endif
+    let l:tmp = tempname()
+    let l:tmp_wm = l:tmp . '.wm'
+    let l:tmp_enc = l:tmp . '.enc'
+    call writefile(getline(1, '$'), l:tmp, 'b')
+    let l:student = empty($GITHUB_USER) ? 'unknown' : $GITHUB_USER
+    call system('python3 /usr/local/bin/watermark.py encode ' . shellescape(l:student) .
+          \ ' < ' . shellescape(l:tmp) . ' > ' . shellescape(l:tmp_wm))
+    let l:src = v:shell_error == 0 ? l:tmp_wm : l:tmp
+    call system('openssl enc -aes-256-cbc -pbkdf2 -salt -k ' . shellescape(l:key) .
+          \ ' -in ' . shellescape(l:src) . ' -out ' . shellescape(l:tmp_enc))
+    let l:ok = v:shell_error == 0
+    call delete(l:tmp)
+    call delete(l:tmp_wm)
+    if !l:ok
+      call delete(l:tmp_enc)
+      echohl ErrorMsg | echom 'ChipCraft: encrypt failed — .enc not updated' | echohl None
+      return
+    endif
+    call mkdir(fnamemodify(l:enc_path, ':h'), 'p')
+    call rename(l:tmp_enc, l:enc_path)
+    call s:PassthroughWrite()
+    echom 'ChipCraft: saved ' . fnamemodify(l:path, ':t') . ' and updated ' . fnamemodify(l:enc_path, ':t')
     return
   endif
   echohl ErrorMsg
