@@ -47,10 +47,16 @@ sudo iptables -A OUTPUT -d 10.0.0.0/8     -j ACCEPT   # Docker internal
 sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT   # DNS
 sudo iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT   # DNS over TCP
 # GitHub IP ranges (for git push / git clone)
+# Full published list: https://api.github.com/meta (git + web + api ranges)
 sudo iptables -A OUTPUT -p tcp --dport 443 -d 140.82.112.0/20  -j ACCEPT
+sudo iptables -A OUTPUT -p tcp --dport 443 -d 143.55.64.0/20   -j ACCEPT
 sudo iptables -A OUTPUT -p tcp --dport 443 -d 185.199.108.0/22 -j ACCEPT
 sudo iptables -A OUTPUT -p tcp --dport 443 -d 192.30.252.0/22  -j ACCEPT
+sudo iptables -A OUTPUT -p tcp --dport 443 -d 20.201.28.151/32 -j ACCEPT
+sudo iptables -A OUTPUT -p tcp --dport 443 -d 20.205.243.166/32 -j ACCEPT
+sudo iptables -A OUTPUT -p tcp --dport 443 -d 20.87.225.212/32 -j ACCEPT
 sudo iptables -A OUTPUT -p tcp --dport 22  -d 140.82.112.0/20  -j ACCEPT
+sudo iptables -A OUTPUT -p tcp --dport 22  -d 20.201.28.151/32 -j ACCEPT
 # Cloudflare Worker (decryption key fetch) — workers.dev sits behind Cloudflare's
 # anycast network, so a single resolved IP is not stable across requests.
 # Allow Cloudflare's published IPv4 ranges instead (https://www.cloudflare.com/ips-v4).

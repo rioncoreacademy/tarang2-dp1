@@ -67,7 +67,7 @@ while IFS= read -r enc; do
     if openssl enc -d -aes-256-cbc -pbkdf2 -k "$KEY" -in "$enc" -out "$out" 2>/dev/null; then
         count=$((count + 1))
     fi
-done < <(find "$WORK" -path "$BUILD" -prune -o -path "$WORK/.git" -prune -o -name '*.enc' -print)
+done < <(find "$WORK" -path "$BUILD" -prune -o -path "$WORK/.git" -prune -o -type f -name '*.enc' -print)
 unset KEY
 
 echo "[decrypt-all] Decrypted $count file(s) into $BUILD"
