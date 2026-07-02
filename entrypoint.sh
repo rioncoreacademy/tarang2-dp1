@@ -9,6 +9,29 @@ NOVNC_PORT=${NOVNC_PORT:-6080}
 VNC_PASSWORD=${VNC_PASSWORD:-novnc}
 WORK="${WORK:-/workspaces/projects}"
 
+# ── Clone project files FIRST (before firewall blocks GitHub) ────────────────
+# Server Mode skips this: BOOTSTRAP_TOKEN means the API will clone the
+# student's own fork shortly after startup (see api/main.py _clone_repo()).
+if [[ -z "${BOOTSTRAP_TOKEN:-}" && ! -d "$WORK/.git" ]]; then
+    echo "[projects] Cloning chipcraft-lab-files -> $WORK …" >> /tmp/lab-crypto.log
+    # Clone into a temp dir then merge — cloning directly into $WORK fails
+    # when the build tmpfs mount already exists there (git sees non-empty dir).
+    TMPCLONE=$(mktemp -d)
+    if /usr/bin/git clone https://github.com/narrave/chipcraft-lab-files.git "$TMPCLONE" \
+        >> /tmp/lab-crypto.log 2>&1; then
+        mkdir -p "$WORK"
+        shopt -s dotglob
+        mv "$TMPCLONE"/* "$WORK"/ 2>>/tmp/lab-crypto.log
+        shopt -u dotglob
+        rmdir "$TMPCLONE" 2>/dev/null
+        echo "[projects] Clone complete." >> /tmp/lab-crypto.log
+    else
+        echo "[projects] WARNING: could not clone chipcraft-lab-files." >> /tmp/lab-crypto.log
+        rm -rf "$TMPCLONE"
+    fi
+fi
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── Egress firewall ──────────────────────────────────────────────────────────
 # Block outbound internet so students cannot upload decrypted .v files to
 # paste sites, email, or file-sharing services.
@@ -88,45 +111,19 @@ nohup $WS --web=/usr/share/novnc/ "$NOVNC_PORT" localhost:"$VNC_PORT" >> /tmp/no
 
 echo "Lab desktop ready on port $NOVNC_PORT"
 
-# Clone the public lab-files repo into ~/lab if it isn't there yet — needed
-# for Local Docker Mode, where there's no postAttachCommand/setup.sh step to
-# do this. Server Mode skips this: BOOTSTRAP_TOKEN being set means the API
-# will exec its own `rm -rf ~/lab && git clone <student's fork>` shortly
-# after this container starts (see api/main.py's _clone_repo()), so cloning
-# the generic public template here would just be wasted work.
-if [[ -z "${BOOTSTRAP_TOKEN:-}" && ! -d "$WORK/.git" ]]; then
-    echo "[projects] Cloning chipcraft-lab-files -> $WORK …" >> /tmp/lab-crypto.log
-    # Clone into a temp dir, then merge into $WORK — cloning directly into
-    # $WORK fails because the build tmpfs mount (declared at container
-    # creation) already exists there, making git see a "non-empty" target.
-    # /usr/bin/git directly — /usr/local/bin/git (the wrapper) blocks `clone` outright.
-    TMPCLONE=$(mktemp -d)
-    if /usr/bin/git clone https://github.com/narrave/chipcraft-lab-files.git "$TMPCLONE" \
-        >> /tmp/lab-crypto.log 2>&1; then
-        mkdir -p "$WORK"
-        shopt -s dotglob
-        mv "$TMPCLONE"/* "$WORK"/ 2>>/tmp/lab-crypto.log
-        shopt -u dotglob
-        rmdir "$TMPCLONE" 2>/dev/null
-    else
-        echo "[projects] WARNING: could not clone chipcraft-lab-files." >> /tmp/lab-crypto.log
-        rm -rf "$TMPCLONE"
-    fi
-fi
-
 # Fetch key once and write it to ~/.chipcraft_key (mode 600). Decryption itself
 # happens inside gvim, in memory, when a student opens any *.enc file — no
 # plaintext file is ever written to disk (see tools/chipcraft-crypt.vim).
 # Logs go to /tmp/lab-crypto.log — visible to root, not ubuntu, for debugging.
 /usr/local/bin/chipcraft-key-init.sh >> /tmp/lab-crypto.log 2>&1 &
 
-# Watch ~/lab for stray plaintext appearing by any means other than gvim —
+# Watch $WORK for stray plaintext appearing by any means other than gvim —
 # cp, mv, docker cp, anything. chipcraft-crypt.vim only sees Vim's own
 # buffer I/O; this catches what that can't, auto-encrypting and shredding
 # any bare plaintext file the instant it shows up. Same log as above.
 /usr/local/bin/chipcraft-sweep.sh >> /tmp/lab-crypto.log 2>&1 &
 
-# Decrypt every *.enc under ~/lab into ~/lab/build once, up front, and
+# Decrypt every *.enc under $WORK into $WORK/build once, up front, and
 # leave it there for the whole session — DELIBERATE TRADEOFF, see the
 # script's own header comment. Waits for the key itself, so this is safe to
 # background; in Codespace mode the key isn't available yet at this point
