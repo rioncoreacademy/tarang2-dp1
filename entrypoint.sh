@@ -65,6 +65,14 @@ sudo iptables -P OUTPUT DROP               # block everything else
 echo "Egress firewall applied."
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Fix Codespaces noexec on build tmpfs ─────────────────────────────────────
+# Codespaces ignores the exec flag on --tmpfs and mounts build/ with noexec,
+# which prevents compiled Verilator binaries (Vtb_tarang) from running.
+# Remount with exec so regression tests can execute compiled binaries.
+# This is a no-op in local Docker mode where exec is already set.
+sudo /bin/mount -o remount,exec "$BUILD" 2>/dev/null || true
+# ─────────────────────────────────────────────────────────────────────────────
+
 mkdir -p "$HOME/.vnc" /tmp/runtime-ubuntu
 chmod 700 /tmp/runtime-ubuntu
 touch "$HOME/.Xresources"

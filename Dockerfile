@@ -91,8 +91,12 @@ RUN curl -fSL \
     && tar -xjf /tmp/sdcc.tar.bz2 -C /usr/local --strip-components=1 \
     && rm /tmp/sdcc.tar.bz2
 
-# Allow ubuntu to run only iptables via sudo (no full root access)
-RUN echo "ubuntu ALL=(root) NOPASSWD: /sbin/iptables" \
+# Allow ubuntu to run only iptables and a specific mount remount via sudo.
+# The mount rule is needed for Codespaces which mounts the build tmpfs with
+# noexec, preventing compiled binaries (Vtb_tarang) from running.
+RUN printf '%s\n' \
+        "ubuntu ALL=(root) NOPASSWD: /sbin/iptables" \
+        "ubuntu ALL=(root) NOPASSWD: /bin/mount -o remount,exec /workspaces/projects/build" \
         > /etc/sudoers.d/lab-iptables \
     && chmod 440 /etc/sudoers.d/lab-iptables
 

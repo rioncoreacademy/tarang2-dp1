@@ -39,7 +39,8 @@ fi
 
 mkdir -p "$BUILD"
 
-# Remove ghost directories left by old images where WORK was empty
+# Remove top-level ghost directories in BUILD that have no matching project
+# directory in WORK (e.g. "workspaces/" from a stray commit in lab-files repo).
 find "$BUILD" -mindepth 1 -maxdepth 1 -type d | while IFS= read -r d; do
     base="$(basename "$d")"
     if [[ ! -d "$WORK/$base" ]]; then
@@ -55,6 +56,12 @@ while IFS= read -r enc; do
         *.swp.enc|*.swo.enc) continue ;;
     esac
     rel="${enc#"$WORK"/}"
+    # Skip any .enc file whose relative path starts with workspaces/ — these
+    # are stray commits from the lab-files repo that mirror the host path and
+    # would create a nested workspaces/ tree inside BUILD.
+    case "$rel" in
+        workspaces/*|.build.enc/*) continue ;;
+    esac
     out="$BUILD/${rel%.enc}"
     mkdir -p "$(dirname "$out")"
     if openssl enc -d -aes-256-cbc -pbkdf2 -k "$KEY" -in "$enc" -out "$out" 2>/dev/null; then
