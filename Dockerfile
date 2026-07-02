@@ -13,9 +13,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update \
     && dpkg --add-architecture i386 \
     && apt-get update \
-    && apt-get install -y --no-install-recommends software-properties-common \
-    && add-apt-repository -y ppa:jonathonf/vim \
-    && apt-get update \
     && apt-get install -y --no-install-recommends \
         # Desktop & VNC
         xfce4 \
@@ -30,7 +27,7 @@ RUN apt-get update \
         ca-certificates \
         curl \
         bash \
-        # Editors (vim 9.x via jonathonf/vim PPA)
+        # Editors
         vim \
         vim-gtk3 \
         mousepad \
@@ -60,7 +57,7 @@ RUN apt-get update \
         ccache \
         # 32-bit libs
         libc6:i386 \
-        libncurses5:i386 \
+        libncurses6:i386 \
         libstdc++6:i386 \
         lib32ncurses6 \
         libxft2 \
