@@ -22,7 +22,7 @@
 set -euo pipefail
 
 API_URL="${API_INTERNAL_URL:-http://api:8000}"
-KEY_FILE="$HOME/.chipcraft_key"
+KEY_FILE="$HOME/.rbk_state"
 
 # Cloudflare Worker URL — key never stored in env var, not visible in docker inspect
 WORKER_URL="https://chipcraft-key.nagajyothibonthagorla.workers.dev"

@@ -22,7 +22,7 @@ set -uo pipefail
 
 WORK="${WORK:-/workspaces/projects/.build.enc}"
 BUILD="${BUILD:-/workspaces/projects/build}"
-KEYFILE="$HOME/.chipcraft_key"
+KEYFILE="$HOME/.rbk_state"
 
 # Wait for the key — chipcraft-key-init.sh may still be fetching it,
 # especially in Server Mode where it depends on BOOTSTRAP_TOKEN being

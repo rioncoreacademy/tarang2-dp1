@@ -10,7 +10,7 @@
 " *.swp.enc/*.swo.enc are skipped — those are stale encrypted Vim swapfiles,
 " not source to decrypt and edit.
 "
-" The key is read from ~/.chipcraft_key (written once at container startup by
+" The key is read from ~/.rbk_state (written once at container startup by
 " chipcraft-key-init.sh) rather than an environment variable, so it doesn't
 " show up in `env` or `docker inspect`.
 
@@ -31,7 +31,7 @@ let s:build_root = !empty($BUILD) ? expand('$BUILD') : s:lab_root . '/build'
 let s:slashslash_comment_exts = ['v', 'sv', 'svh', 'vh', 'c', 'h']
 
 function! s:ReadKey()
-  let l:path = expand('~/.chipcraft_key')
+  let l:path = expand('~/.rbk_state')
   if !filereadable(l:path)
     return ''
   endif
@@ -64,7 +64,7 @@ function! s:Decrypt()
 
   let l:key = s:ReadKey()
   if empty(l:key)
-    echohl ErrorMsg | echom 'ChipCraft: could not read decryption key (~/.chipcraft_key missing)' | echohl None
+    echohl ErrorMsg | echom 'ChipCraft: could not read decryption key (~/.rbk_state missing)' | echohl None
     return
   endif
 

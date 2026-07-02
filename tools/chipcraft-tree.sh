@@ -32,7 +32,7 @@ set -euo pipefail
 
 WORK="${WORK:-/workspaces/projects/.build.enc}"
 BUILD="${BUILD:-/workspaces/projects/build}"
-KEYFILE="$HOME/.chipcraft_key"
+KEYFILE="$HOME/.rbk_state"
 
 usage() {
     echo "Usage: chipcraft-tree {shell|start|stop} <subtree>" >&2

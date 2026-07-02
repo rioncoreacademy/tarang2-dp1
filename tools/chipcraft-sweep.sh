@@ -20,7 +20,7 @@ set -uo pipefail
 
 WORK="${WORK:-/workspaces/projects/.build.enc}"
 BUILD="${BUILD:-/workspaces/projects/build}"
-KEYFILE="$HOME/.chipcraft_key"
+KEYFILE="$HOME/.rbk_state"
 SCRATCH="$BUILD/.sweep-tmp"
 ALLOWLIST=("Makefile" ".gitignore" ".gitattributes" "README.md")
 
