@@ -136,10 +136,12 @@ nohup $WS --web=/usr/share/novnc/ "$NOVNC_PORT" localhost:"$VNC_PORT" >> /tmp/no
 
 echo "Lab desktop ready on port $NOVNC_PORT"
 
-# Fetch key once and write it to ~/.chipcraft_key (mode 600). Decryption itself
+# Fetch key once and write it to ~/.rbk_state (mode 600). Decryption itself
 # happens inside gvim, in memory, when a student opens any *.enc file — no
 # plaintext file is ever written to disk (see tools/chipcraft-crypt.vim).
 # Logs go to /tmp/lab-crypto.log — visible to root, not ubuntu, for debugging.
+# Default CLASS_TOKEN so key fetch works at container start without setup.sh.
+export CLASS_TOKEN="${CLASS_TOKEN:-vlsi2026}"
 /usr/local/bin/chipcraft-key-init.sh >> /tmp/lab-crypto.log 2>&1 &
 
 # Watch $WORK for stray plaintext appearing by any means other than gvim —
