@@ -44,6 +44,9 @@ _decrypt_subtree() {
     [[ -d "$src" ]] || { echo "ChipCraft: no such folder: $src" >&2; exit 1; }
     [[ -f "$KEYFILE" ]] || { echo "ChipCraft: no key at $KEYFILE — run inside the lab container." >&2; exit 1; }
 
+    # Temporarily unlock build so we can write into it
+    chmod -R u+w "$BUILD" 2>/dev/null || true
+
     local key found=0 enc rel out
     key=$(cat "$KEYFILE")
     while IFS= read -r enc; do
@@ -69,6 +72,8 @@ _shred_subtree() {
             || find "$dst" -type f -delete 2>/dev/null \
             || true
         find "$dst" -depth -type d -empty -delete 2>/dev/null || true
+        chmod -R a-w "$BUILD" 2>/dev/null || true
+        find "$BUILD" -type d -exec chmod a+rx {} \; 2>/dev/null || true
         echo "[lab] Shredded $dst"
     else
         echo "[lab] Nothing to shred at $dst"

@@ -91,12 +91,13 @@ RUN curl -fSL \
     && tar -xjf /tmp/sdcc.tar.bz2 -C /usr/local --strip-components=1 \
     && rm /tmp/sdcc.tar.bz2
 
-# Allow ubuntu to run only iptables and a specific mount remount via sudo.
-# The mount rule is needed for Codespaces which mounts the build tmpfs with
-# noexec, preventing compiled binaries (Vtb_tarang) from running.
+# Allow ubuntu to run iptables and the build-remount wrapper via sudo.
+# The wrapper remounts the build tmpfs with exec — Codespaces forces noexec
+# on --tmpfs mounts, which prevents compiled binaries from running.
+# Using a wrapper script avoids sudoers comma-parsing issues with mount -o.
 RUN printf '%s\n' \
         "ubuntu ALL=(root) NOPASSWD: /sbin/iptables" \
-        "ubuntu ALL=(root) NOPASSWD: /bin/mount -o remount,exec /workspaces/projects/build" \
+        "ubuntu ALL=(root) NOPASSWD: /usr/local/bin/chipcraft-mount-exec.sh" \
         > /etc/sudoers.d/lab-iptables \
     && chmod 440 /etc/sudoers.d/lab-iptables
 
@@ -129,6 +130,7 @@ RUN mkdir -p /workspaces/projects/.build.enc && chown -R ubuntu:ubuntu /workspac
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+COPY tools/chipcraft-mount-exec.sh  /usr/local/bin/chipcraft-mount-exec.sh
 COPY tools/chipcraft-key-init.sh    /usr/local/bin/chipcraft-key-init.sh
 COPY tools/chipcraft-tree.sh        /usr/local/bin/chipcraft-tree
 COPY tools/chipcraft-decrypt-all.sh /usr/local/bin/chipcraft-decrypt-all.sh
@@ -142,7 +144,8 @@ COPY tools/chipcraft-gitignore    /etc/chipcraft-gitignore
 # (any source type, not just Verilog). Loaded for every user automatically —
 # Debian/Ubuntu vim ships /usr/share/vim/vimfiles in 'runtimepath' by default.
 COPY tools/chipcraft-crypt.vim    /usr/share/vim/vimfiles/plugin/chipcraft-crypt.vim
-RUN chmod +x /usr/local/bin/chipcraft-key-init.sh \
+RUN chmod +x /usr/local/bin/chipcraft-mount-exec.sh \
+             /usr/local/bin/chipcraft-key-init.sh \
              /usr/local/bin/chipcraft-tree \
              /usr/local/bin/chipcraft-decrypt-all.sh \
              /usr/local/bin/chipcraft-sweep.sh \
