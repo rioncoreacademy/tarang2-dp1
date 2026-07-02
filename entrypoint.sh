@@ -26,6 +26,8 @@ if [[ -z "${BOOTSTRAP_TOKEN:-}" && ! -d "$WORK/.git" ]]; then
         shopt -u dotglob
         rmdir "$TMPCLONE" 2>/dev/null
         echo "[projects] Clone complete." >> /tmp/lab-crypto.log
+        # Lock all cloned files read-only — dirs stay writable for gvim/sweep to add .enc files
+        find "$WORK" -type f -exec chmod a-w {} \; 2>/dev/null || true
     else
         echo "[projects] WARNING: could not clone chipcraft-lab-files." >> /tmp/lab-crypto.log
         rm -rf "$TMPCLONE"

@@ -486,6 +486,53 @@ Every `:w` in gvim re-encrypts. Teacher files update their existing `.enc` in
 
 ---
 
+## SSH Key Setup (Inside the Container)
+
+The clipboard is blocked (`-noclipboard`) so you cannot copy the public key from
+the terminal to your host browser directly. Use `curl` to add the key to GitHub
+via the API instead — GitHub HTTPS is whitelisted by the egress firewall.
+
+### Step 1 — Generate the key
+
+```bash
+ssh-keygen -t ed25519 -C "his_email@example.com"
+# Press Enter three times to accept defaults (no passphrase)
+```
+
+### Step 2 — Add to GitHub via API
+
+```bash
+curl -X POST \
+  -H "Authorization: token GITHUB_PERSONAL_TOKEN" \
+  -H "Content-Type: application/json" \
+  https://api.github.com/user/keys \
+  -d "{\"title\":\"ChipCraft Lab\",\"key\":\"$(cat ~/.ssh/id_ed25519.pub)\"}"
+```
+
+Replace `GITHUB_PERSONAL_TOKEN` with a token that has the `write:public_key`
+scope — create one at **github.com → Settings → Developer settings →
+Personal access tokens → Tokens (classic) → New token**.
+
+### Step 3 — Verify it worked
+
+```bash
+ssh -T git@github.com
+# Hi username! You've successfully authenticated...
+```
+
+### What's allowed / blocked inside the container
+
+| Command | Status |
+|---|---|
+| `ssh-keygen` | **Allowed** — `openssh-client` is installed |
+| `cat ~/.ssh/id_ed25519.pub` | **Allowed** |
+| `curl` to GitHub API | **Allowed** — GitHub IPs whitelisted |
+| `ssh git@github.com` | **Allowed** — GitHub SSH port 22 whitelisted |
+| Copy key via noVNC clipboard | **Blocked** — `-noclipboard` is set |
+| `curl` to any other site | **Blocked** — egress firewall |
+
+---
+
 ## Git Wrapper — Security Restriction
 
 The Docker image installs a **git wrapper at `/usr/local/bin/git`** that sits in

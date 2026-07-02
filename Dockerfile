@@ -13,6 +13,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update \
     && dpkg --add-architecture i386 \
     && apt-get update \
+    && apt-get install -y --no-install-recommends software-properties-common \
+    && add-apt-repository -y ppa:jonathonf/vim \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         # Desktop & VNC
         xfce4 \
@@ -27,10 +30,12 @@ RUN apt-get update \
         ca-certificates \
         curl \
         bash \
-        # Editors
+        # Editors (vim 9.x via jonathonf/vim PPA)
         vim \
         vim-gtk3 \
         mousepad \
+        # SSH client
+        openssh-client \
         # Python
         python3 \
         python3-pip \

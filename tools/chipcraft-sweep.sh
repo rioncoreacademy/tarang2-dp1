@@ -1,30 +1,17 @@
 #!/bin/bash
-# ChipCraft Lab — sweep stray plaintext out of ~/lab, regardless of how it
-# got there: cp, mv, docker cp, or anything else that isn't gvim.
+# ChipCraft Lab — sweep watcher for WORK (.build.enc) and BUILD (build).
 #
-# chipcraft-crypt.vim only intercepts Vim's own buffer I/O (BufReadCmd /
-# BufWriteCmd) — it has no visibility into files written by other tools.
-# This runs as a long-lived background watcher instead: any new/modified
-# file under ~/lab that isn't *.enc, isn't under ~/lab/build/ (tmpfs build
-# scratch), isn't under ~/lab/.git/ (git's own internals — touching these
-# would corrupt the repo), and isn't one of the allowed plaintext infra
-# files (Makefile, .gitignore, .gitattributes, README.md) gets encrypted to
-# its .enc counterpart and the plaintext shredded — automatically, within
-# moments of it appearing.
+# WORK (.build.enc):
+#   - Plaintext files  → auto-encrypt to .enc, shred plaintext
+#   - New .enc files   → lock read-only, decrypt copy into build/
 #
-# Two layers, not one: an inotify event watch for fast response, plus a
-# periodic full-tree poll as a backstop. inotify's recursive watch has a
-# real race — if something like `cp -r` creates a brand-new directory and
-# floods it with files immediately, the watch on that new directory may not
-# be registered yet when those writes happen, and the events are lost
-# entirely (a known inotify limitation, not a logic bug). The periodic scan
-# below can't miss anything for longer than its interval, regardless of how
-# fast files land.
+# BUILD (build):
+#   - .enc files dropped here → decrypt to .v in same location,
+#                               move .enc to matching path in WORK,
+#                               lock both read-only
+#   - All other files  → exempt (build scratch space)
 #
-# Residual limit: there's always a race between "file appears" and either
-# layer reacting. A docker cp reading the file in that exact instant can't
-# be prevented by anything running inside the container — same category of
-# limit as root access or SIGKILL elsewhere in this system.
+# Two layers: inotify for fast response + periodic poll as backstop.
 
 set -uo pipefail
 
@@ -45,34 +32,95 @@ _is_allowed() {
     return 1
 }
 
+# Handle .enc file dropped into build/:
+#   1. Decrypt → .v file in same build/ location (read-only)
+#   2. Move .enc → matching path in WORK (read-only)
+_handle_build_enc() {
+    local path="$1"
+    local rel="${path#"$BUILD"/}"              # e.g. tarang2_dp1/rtl/counter.v.enc
+    local plain="${path%.enc}"                 # e.g. build/.../counter.v
+    local enc_in_work="$WORK/$rel"            # e.g. .build.enc/.../counter.v.enc
+
+    local tries=0
+    while [[ ! -f "$KEYFILE" && $tries -lt 30 ]]; do
+        sleep 1; tries=$((tries + 1))
+    done
+    if [[ ! -f "$KEYFILE" ]]; then
+        echo "[sweep] ERROR: no key — cannot process build/$rel" >&2
+        return 0
+    fi
+
+    local key
+    key=$(cat "$KEYFILE")
+
+    # Decrypt into build/ (unlock first in case it already exists read-only)
+    chmod u+w "$plain" 2>/dev/null || true
+    if openssl enc -d -aes-256-cbc -pbkdf2 -k "$key" -in "$path" -out "$plain" 2>/dev/null; then
+        chmod a-w "$plain" 2>/dev/null || true
+        echo "[sweep] Decrypted build/$rel -> build/${rel%.enc}"
+    else
+        echo "[sweep] ERROR: decrypt failed for build/$rel" >&2
+    fi
+    unset key
+
+    # Move .enc from build/ to WORK with same folder structure
+    mkdir -p "$(dirname "$enc_in_work")"
+    mv -f "$path" "$enc_in_work"
+    chmod a-w "$enc_in_work" 2>/dev/null || true
+    echo "[sweep] Moved build/$rel -> .build.enc/$rel"
+}
+
 _sweep_file() {
     local path="$1"
     [[ -f "$path" ]] || return 0
+
+    # .enc file dropped into build/ — decrypt and move to WORK
+    if [[ "$path" == "$BUILD"/* && "$path" == *.enc ]]; then
+        _handle_build_enc "$path"
+        return 0
+    fi
+
     case "$path" in
-        "$BUILD"/*)  return 0 ;;   # tmpfs build scratch — exempt
+        "$BUILD"/*)       return 0 ;;   # build scratch — exempt (non-.enc)
         "$WORK"/.git/*)   return 0 ;;   # git internals — never touch
-        *.enc)            return 0 ;;   # already encrypted
-        *.swp|*.swo|*~)   return 0 ;;   # editor temp junk, not real source
+        *.swp|*.swo|*~)   return 0 ;;   # editor temp junk
     esac
+
+    # .enc file in WORK → lock read-only + sync decrypted copy to build/
+    if [[ "$path" == *.enc ]]; then
+        chmod a-w "$path" 2>/dev/null || true
+        if [[ -f "$KEYFILE" ]]; then
+            local rel out key
+            rel="${path#"$WORK"/}"
+            out="$BUILD/${rel%.enc}"
+            mkdir -p "$(dirname "$out")"
+            key=$(cat "$KEYFILE")
+            chmod u+w "$out" 2>/dev/null || true
+            if openssl enc -d -aes-256-cbc -pbkdf2 -k "$key" -in "$path" -out "$out" 2>/dev/null; then
+                chmod a-w "$out" 2>/dev/null || true
+                echo "[sweep] Synced $rel -> build/${rel%.enc}"
+            fi
+            unset key
+        fi
+        return 0
+    fi
+
     _is_allowed "$path" && return 0
 
+    # Plaintext file in WORK → auto-encrypt and shred
     local rel tmp enc
     rel="${path#"$WORK"/}"
     enc="${path}.enc"
 
-    # Move out of the watched tree immediately — avoids re-triggering this
-    # same watcher on our own encrypt/shred activity below, and shrinks the
-    # window the plaintext sits at a predictable path under ~/lab.
     tmp="$SCRATCH/sweep.$$.$RANDOM"
     mv -f "$path" "$tmp" 2>/dev/null || return 0
 
     local tries=0
     while [[ ! -f "$KEYFILE" && $tries -lt 30 ]]; do
-        sleep 1
-        tries=$((tries + 1))
+        sleep 1; tries=$((tries + 1))
     done
     if [[ ! -f "$KEYFILE" ]]; then
-        echo "[sweep] ERROR: no key available — restoring $rel as plaintext (could not encrypt)" >&2
+        echo "[sweep] ERROR: no key — restoring $rel as plaintext" >&2
         mv -f "$tmp" "$path" 2>/dev/null
         return 0
     fi
@@ -80,6 +128,7 @@ _sweep_file() {
     local key
     key=$(cat "$KEYFILE")
     if openssl enc -aes-256-cbc -pbkdf2 -salt -k "$key" -in "$tmp" -out "$enc" 2>/dev/null; then
+        chmod a-w "$enc" 2>/dev/null || true
         echo "[sweep] Encrypted stray plaintext: $rel -> ${rel}.enc"
     else
         echo "[sweep] ERROR: could not encrypt $rel — restoring as plaintext" >&2
@@ -95,20 +144,20 @@ _sweep_file() {
 _poll_loop() {
     while true; do
         sleep 5
-        find "$WORK" -type f 2>/dev/null | while IFS= read -r f; do
+        find "$WORK" "$BUILD" -type f 2>/dev/null | while IFS= read -r f; do
             _sweep_file "$f"
         done
     done
 }
 
 mkdir -p "$WORK"
-echo "[sweep] Watching $WORK for stray plaintext …"
+echo "[sweep] Watching $WORK and $BUILD …"
 
 _poll_loop &
 
 inotifywait -m -r -e close_write,moved_to \
-    --exclude '/(\.git|build)/' \
-    --format '%w%f' "$WORK" 2>/dev/null \
+    --exclude '/\.git/' \
+    --format '%w%f' "$WORK" "$BUILD" 2>/dev/null \
 | while IFS= read -r changed; do
     _sweep_file "$changed"
 done

@@ -74,6 +74,22 @@ Workflow: `.github/workflows/publish-image.yml`
 - Python 3 + pip
 - xfce4-terminal, mousepad editor
 
+## SSH Key Setup
+
+Clipboard is blocked inside the container. Use `curl` to add your SSH key to GitHub directly:
+
+```bash
+ssh-keygen -t ed25519 -C "your_email@example.com"
+
+curl -X POST \
+  -H "Authorization: token GITHUB_PERSONAL_TOKEN" \
+  -H "Content-Type: application/json" \
+  https://api.github.com/user/keys \
+  -d "{\"title\":\"ChipCraft Lab\",\"key\":\"$(cat ~/.ssh/id_ed25519.pub)\"}"
+```
+
+Get a token at: **github.com → Settings → Developer settings → Personal access tokens → New token** (scope: `write:public_key`)
+
 ## Troubleshooting
 
 **Desktop not loading:**

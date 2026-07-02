@@ -21,6 +21,10 @@ let g:loaded_chipcraft_crypt = 1
 
 set viminfo=
 
+" Root paths — read from env vars set by the container (with fallbacks)
+let s:lab_root   = !empty($WORK)  ? expand('$WORK')  : expand('$HOME') . '/lab'
+let s:build_root = !empty($BUILD) ? expand('$BUILD') : s:lab_root . '/build'
+
 " Extensions where a leading "// stamp" line is valid syntax. Other types
 " (asm, pl, ini, do, txt, list, …) skip the visible decoy header — the
 " invisible trailing-space watermark (works on any text) still applies.
@@ -138,9 +142,12 @@ function! s:Encrypt()
     let l:inner = fnamemodify(l:enc_path, ':r')
     if l:inner =~# '^' . escape(s:lab_root, '/\') . '/'
       let l:rel = l:inner[len(s:lab_root) + 1:]
-      let l:build_copy = s:lab_root . '/build/' . l:rel
+      let l:build_copy = s:build_root . '/' . l:rel
       if isdirectory(fnamemodify(l:build_copy, ':h'))
+        " Temporarily unlock the read-only build copy before updating it
+        call system('chmod u+w ' . shellescape(l:build_copy) . ' 2>/dev/null || true')
         call writefile(readfile(l:src_for_enc, 'b'), l:build_copy, 'b')
+        call system('chmod a-w ' . shellescape(l:build_copy) . ' 2>/dev/null || true')
       endif
     endif
   endif
@@ -153,12 +160,15 @@ function! s:Encrypt()
     return
   endif
 
+  " Unlock the destination .enc file before overwriting (it may be read-only)
+  call system('chmod u+w ' . shellescape(l:enc_path) . ' 2>/dev/null || true')
   call mkdir(fnamemodify(l:enc_path, ':h'), 'p')
   call rename(l:tmp_enc, l:enc_path)
+  call system('chmod a-w ' . shellescape(l:enc_path) . ' 2>/dev/null || true')
   set nomodified
 endfunction
 
-" ── Guard against bare (non-.enc) source files under ~/lab ──────────────────
+" ── Guard against bare (non-.enc) source files under WORK or BUILD ───────────
 "
 " If a student opens "new_tests.v" instead of "new_tests.v.enc" — an easy
 " typo, not a deliberate bypass — none of the above applies: Vim's default
@@ -166,11 +176,11 @@ endfunction
 " completely outside the encryption scheme. This mirrors the same allowlist
 " chipcraft-lab-files/.gitignore already enforces at the git layer (only
 " Makefile/.gitignore/.gitattributes/README.md and *.enc are real plaintext),
-" but live in
-" the editor instead of just at commit time. ~/lab/build/ is exempt — that's
-" the tmpfs build-scratch area where transient plaintext is expected.
+" but live in the editor instead of just at commit time.
+" build/ is exempt for reads — that is the tmpfs build-scratch area where
+" transient plaintext is expected to be read. Writes from build/ are
+" redirected back to the .enc source.
 
-let s:lab_root = expand('$HOME') . '/lab'
 let s:plain_allowlist = ['Makefile', '.gitignore', '.gitattributes', 'README.md']
 
 function! s:UnderLab(path)
@@ -178,7 +188,7 @@ function! s:UnderLab(path)
 endfunction
 
 function! s:UnderBuild(path)
-  return a:path =~# '^' . escape(s:lab_root, '/\') . '/build\(/\|$\)'
+  return a:path =~# '^' . escape(s:build_root, '/\') . '\(/\|$\)'
 endfunction
 
 function! s:IsAllowedPlain(path)
@@ -202,22 +212,22 @@ endfunction
 function! s:GuardedRead()
   let l:path = expand('%:p')
   " .enc files are handled by the ChipCraftCrypt group above; anything
-  " outside ~/lab entirely is none of this guard's business either.
-  if l:path =~# '\.enc$' || !s:UnderLab(l:path)
+  " outside WORK/BUILD entirely is none of this guard's business either.
+  if l:path =~# '\.enc$' || (!s:UnderLab(l:path) && !s:UnderBuild(l:path))
     return
   endif
   call s:HardenBuffer()
   call s:PassthroughRead()
   if !s:UnderBuild(l:path) && !s:IsAllowedPlain(l:path)
     echohl WarningMsg
-    echom 'ChipCraft: "' . fnamemodify(l:path, ':t') . '" is plaintext under ~/lab — save as .enc instead.'
+    echom 'ChipCraft: "' . fnamemodify(l:path, ':t') . '" is plaintext under projects — save as .enc instead.'
     echohl None
   endif
 endfunction
 
 function! s:GuardedWrite()
   let l:path = expand('%:p')
-  if l:path =~# '\.enc$' || !s:UnderLab(l:path)
+  if l:path =~# '\.enc$' || (!s:UnderLab(l:path) && !s:UnderBuild(l:path))
     return
   endif
   if s:IsAllowedPlain(l:path)
@@ -226,10 +236,10 @@ function! s:GuardedWrite()
   endif
   if s:UnderBuild(l:path)
     " Editing a plaintext file directly from build/ — find the .enc
-    " counterpart in ~/lab and encrypt to it, so edits persist across
+    " counterpart in WORK and encrypt to it, so edits persist across
     " container restarts. Saving from build/ should be equivalent to
     " editing the .enc source directly — no silent lost-work trap.
-    let l:rel = l:path[len(s:lab_root . '/build/'):]
+    let l:rel = l:path[len(s:build_root . '/'):]
     let l:enc_path = s:lab_root . '/' . l:rel . '.enc'
     let l:key = s:ReadKey()
     if empty(l:key)
@@ -254,14 +264,20 @@ function! s:GuardedWrite()
       echohl ErrorMsg | echom 'ChipCraft: encrypt failed — .enc not updated' | echohl None
       return
     endif
+    " Unlock enc destination before overwriting
+    call system('chmod u+w ' . shellescape(l:enc_path) . ' 2>/dev/null || true')
     call mkdir(fnamemodify(l:enc_path, ':h'), 'p')
     call rename(l:tmp_enc, l:enc_path)
+    call system('chmod a-w ' . shellescape(l:enc_path) . ' 2>/dev/null || true')
+    " Temporarily unlock the build copy to write the updated plaintext
+    call system('chmod u+w ' . shellescape(l:path) . ' 2>/dev/null || true')
     call s:PassthroughWrite()
+    call system('chmod a-w ' . shellescape(l:path) . ' 2>/dev/null || true')
     echom 'ChipCraft: saved ' . fnamemodify(l:path, ':t') . ' and updated ' . fnamemodify(l:enc_path, ':t')
     return
   endif
   echohl ErrorMsg
-  echom 'ChipCraft: refusing to save plaintext "' . fnamemodify(l:path, ':t') . '" under ~/lab.'
+  echom 'ChipCraft: refusing to save plaintext "' . fnamemodify(l:path, ':t') . '" under projects.'
   echom 'ChipCraft: save as "' . fnamemodify(l:path, ':t') . '.enc" instead — gvim will encrypt it automatically.'
   echohl None
 endfunction
@@ -273,11 +289,16 @@ augroup ChipCraftCrypt
   autocmd BufWriteCmd *.enc call s:Encrypt()
 augroup END
 
-let s:lab_pattern = s:lab_root . '/**'
+" Watch both WORK (.build.enc) and BUILD (build) directories
+let s:lab_pattern   = s:lab_root   . '/**'
+let s:build_pattern = s:build_root . '/**'
 
 augroup ChipCraftPlainGuard
   autocmd!
 augroup END
-execute 'autocmd ChipCraftPlainGuard BufReadPre,BufNewFile ' . s:lab_pattern . ' call s:HardenBuffer()'
-execute 'autocmd ChipCraftPlainGuard BufReadCmd  ' . s:lab_pattern . ' call s:GuardedRead()'
-execute 'autocmd ChipCraftPlainGuard BufWriteCmd ' . s:lab_pattern . ' call s:GuardedWrite()'
+execute 'autocmd ChipCraftPlainGuard BufReadPre,BufNewFile ' . s:lab_pattern   . ' call s:HardenBuffer()'
+execute 'autocmd ChipCraftPlainGuard BufReadCmd  '           . s:lab_pattern   . ' call s:GuardedRead()'
+execute 'autocmd ChipCraftPlainGuard BufWriteCmd '           . s:lab_pattern   . ' call s:GuardedWrite()'
+execute 'autocmd ChipCraftPlainGuard BufReadPre,BufNewFile ' . s:build_pattern . ' call s:HardenBuffer()'
+execute 'autocmd ChipCraftPlainGuard BufReadCmd  '           . s:build_pattern . ' call s:GuardedRead()'
+execute 'autocmd ChipCraftPlainGuard BufWriteCmd '           . s:build_pattern . ' call s:GuardedWrite()'
