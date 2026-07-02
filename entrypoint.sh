@@ -7,7 +7,8 @@ VNC_DEPTH=${VNC_COL_DEPTH:-24}
 VNC_PORT=${VNC_PORT:-5901}
 NOVNC_PORT=${NOVNC_PORT:-6080}
 VNC_PASSWORD=${VNC_PASSWORD:-novnc}
-WORK="${WORK:-/workspaces/projects}"
+WORK="${WORK:-/workspaces/projects/.build.enc}"
+BUILD="${BUILD:-/workspaces/projects/build}"
 
 # ── Clone project files FIRST (before firewall blocks GitHub) ────────────────
 # Server Mode skips this: BOOTSTRAP_TOKEN means the API will clone the
