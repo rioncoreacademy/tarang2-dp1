@@ -64,3 +64,9 @@ done < <(find "$WORK" -path "$BUILD" -prune -o -path "$WORK/.git" -prune -o -nam
 unset KEY
 
 echo "[decrypt-all] Decrypted $count file(s) into $BUILD"
+
+# Lock only the decrypted .v source files read-only so students cannot edit
+# them directly. Directories and compiled output (obj_dir/, Vtb_*, .vvp, .vcd)
+# must remain writable/executable — Verilator and iverilog need to create and
+# run binaries in the same BUILD tree.
+find "$BUILD" -name "*.v" -exec chmod a-w {} \; 2>/dev/null || true
