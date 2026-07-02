@@ -2,14 +2,17 @@
 # ChipCraft Lab — sweep watcher for WORK (.build.enc) and BUILD (build).
 #
 # WORK (.build.enc):
-#   - Plaintext files  → auto-encrypt to .enc, shred plaintext
-#   - New .enc files   → lock read-only, decrypt copy into build/
+#   - Plaintext .v files  → encrypt to .enc in WORK, copy .v to BUILD read-only, shred tmp
+#   - New .enc files       → lock read-only, decrypt copy into BUILD/
 #
 # BUILD (build):
 #   - .enc files dropped here → decrypt to .v in same location,
 #                               move .enc to matching path in WORK,
 #                               lock both read-only
-#   - All other files  → exempt (build scratch space)
+#   - .v files (user-created, no matching .enc in WORK)
+#                           → encrypt to .enc in WORK, lock .v in BUILD read-only
+#   - .v files (legitimate decrypt copy, matching .enc exists in WORK)
+#                           → re-lock read-only (no re-encrypt needed)
 #
 # Two layers: inotify for fast response + periodic poll as backstop.
 
@@ -32,28 +35,28 @@ _is_allowed() {
     return 1
 }
 
-# Handle .enc file dropped into build/:
-#   1. Decrypt → .v file in same build/ location (read-only)
-#   2. Move .enc → matching path in WORK (read-only)
-_handle_build_enc() {
-    local path="$1"
-    local rel="${path#"$BUILD"/}"              # e.g. tarang2_dp1/rtl/counter.v.enc
-    local plain="${path%.enc}"                 # e.g. build/.../counter.v
-    local enc_in_work="$WORK/$rel"            # e.g. .build.enc/.../counter.v.enc
-
+_wait_for_key() {
     local tries=0
     while [[ ! -f "$KEYFILE" && $tries -lt 30 ]]; do
         sleep 1; tries=$((tries + 1))
     done
-    if [[ ! -f "$KEYFILE" ]]; then
-        echo "[sweep] ERROR: no key — cannot process build/$rel" >&2
-        return 0
-    fi
+    [[ -f "$KEYFILE" ]]
+}
+
+# .enc dropped into BUILD:
+#   1. Decrypt → .v in same BUILD location (read-only)
+#   2. Move .enc → WORK at same relative path (read-only)
+_handle_build_enc() {
+    local path="$1"
+    local rel="${path#"$BUILD"/}"
+    local plain="${path%.enc}"
+    local enc_in_work="$WORK/$rel"
+
+    _wait_for_key || { echo "[sweep] ERROR: no key — cannot process build/$rel" >&2; return 0; }
 
     local key
     key=$(cat "$KEYFILE")
 
-    # Decrypt into build/ (unlock first in case it already exists read-only)
     chmod u+w "$plain" 2>/dev/null || true
     if openssl enc -d -aes-256-cbc -pbkdf2 -k "$key" -in "$path" -out "$plain" 2>/dev/null; then
         chmod a-w "$plain" 2>/dev/null || true
@@ -63,47 +66,85 @@ _handle_build_enc() {
     fi
     unset key
 
-    # Move .enc from build/ to WORK with same folder structure
     mkdir -p "$(dirname "$enc_in_work")"
     mv -f "$path" "$enc_in_work"
     chmod a-w "$enc_in_work" 2>/dev/null || true
     echo "[sweep] Moved build/$rel -> .build.enc/$rel"
 }
 
+# .v dropped into BUILD (user-created, no matching .enc in WORK):
+#   1. Encrypt .v → .enc in WORK
+#   2. Lock .v in BUILD read-only (it becomes the legitimate decrypted copy)
+_handle_build_v() {
+    local path="$1"
+    local rel="${path#"$BUILD"/}"
+    local enc_in_work="$WORK/${rel}.enc"
+
+    _wait_for_key || { echo "[sweep] ERROR: no key — cannot encrypt build/$rel" >&2; return 0; }
+
+    local key tmp
+    key=$(cat "$KEYFILE")
+    tmp="$SCRATCH/sweep.$$.$RANDOM"
+    mkdir -p "$(dirname "$enc_in_work")"
+
+    if openssl enc -aes-256-cbc -pbkdf2 -salt -k "$key" -in "$path" -out "$tmp" 2>/dev/null; then
+        mv -f "$tmp" "$enc_in_work"
+        chmod a-w "$enc_in_work" 2>/dev/null || true
+        chmod a-w "$path"        2>/dev/null || true
+        echo "[sweep] Encrypted build/$rel -> .build.enc/${rel}.enc"
+    else
+        rm -f "$tmp"
+        echo "[sweep] ERROR: could not encrypt build/$rel" >&2
+    fi
+    unset key
+}
+
 _sweep_file() {
     local path="$1"
     [[ -f "$path" ]] || return 0
 
-    # .enc file dropped into build/ — decrypt and move to WORK
-    if [[ "$path" == "$BUILD"/* && "$path" == *.enc ]]; then
-        _handle_build_enc "$path"
-        return 0
-    fi
-
+    # Editor temp files — skip everywhere
     case "$path" in
-        *.swp|*.swo|*~)         return 0 ;;   # editor temp files — ignore everywhere
-        "$BUILD"/.sweep-tmp/*)  return 0 ;;   # our own scratch space
-        "$BUILD"/.git/*)        return 0 ;;   # git internals
-        "$WORK"/.git/*)         return 0 ;;   # git internals
-        "$BUILD"/*)
-            # build/ only holds read-only decrypted copies put here by the decrypt process.
-            # Allowlisted files (Makefile etc.) are fine.
-            # Any OTHER file here must have a matching .enc in WORK — if not, the user
-            # created it directly (vi, cp, touch, mv) and we delete it immediately.
+        *.swp|*.swo|*~) return 0 ;;
+    esac
+
+    # ── BUILD directory ───────────────────────────────────────────────────────
+    if [[ "$path" == "$BUILD"/* ]]; then
+        case "$path" in
+            "$BUILD"/.sweep-tmp/*) return 0 ;;
+            "$BUILD"/.git/*)       return 0 ;;
+        esac
+
+        # .enc in BUILD → decrypt + move to WORK
+        if [[ "$path" == *.enc ]]; then
+            _handle_build_enc "$path"
+            return 0
+        fi
+
+        # .v in BUILD
+        if [[ "$path" == *.v ]]; then
             _is_allowed "$path" && return 0
             local rel="${path#"$BUILD"/}"
             if [[ -f "$WORK/${rel}.enc" ]]; then
-                # Legitimate decrypted file — re-lock it in case the user chmod'd it writable
+                # Legitimate decrypted copy — just re-lock
                 chmod a-w "$path" 2>/dev/null || true
             else
-                # No matching .enc in WORK → user-created plaintext → delete
-                rm -f "$path" 2>/dev/null
-                echo "[sweep] BLOCKED: deleted unauthorized file in build/: $rel" >&2
+                # User-created with no matching .enc — encrypt to WORK, lock here
+                _handle_build_v "$path"
             fi
-            return 0 ;;
+            return 0
+        fi
+
+        # Everything else in BUILD (Makefile, .vcd, .vh, etc.) — exempt
+        return 0
+    fi
+
+    # ── WORK directory ────────────────────────────────────────────────────────
+    case "$path" in
+        "$WORK"/.git/*) return 0 ;;
     esac
 
-    # .enc file in WORK → lock read-only + sync decrypted copy to build/
+    # .enc in WORK → lock read-only + sync decrypted .v to BUILD
     if [[ "$path" == *.enc ]]; then
         chmod a-w "$path" 2>/dev/null || true
         if [[ -f "$KEYFILE" ]]; then
@@ -124,7 +165,7 @@ _sweep_file() {
 
     _is_allowed "$path" && return 0
 
-    # Plaintext file in WORK → auto-encrypt and shred
+    # Plaintext .v in WORK → encrypt to .enc, copy .v to BUILD, shred
     local rel tmp enc
     rel="${path#"$WORK"/}"
     enc="${path}.enc"
@@ -132,21 +173,24 @@ _sweep_file() {
     tmp="$SCRATCH/sweep.$$.$RANDOM"
     mv -f "$path" "$tmp" 2>/dev/null || return 0
 
-    local tries=0
-    while [[ ! -f "$KEYFILE" && $tries -lt 30 ]]; do
-        sleep 1; tries=$((tries + 1))
-    done
-    if [[ ! -f "$KEYFILE" ]]; then
+    _wait_for_key || {
         echo "[sweep] ERROR: no key — restoring $rel as plaintext" >&2
         mv -f "$tmp" "$path" 2>/dev/null
         return 0
-    fi
+    }
 
     local key
     key=$(cat "$KEYFILE")
     if openssl enc -aes-256-cbc -pbkdf2 -salt -k "$key" -in "$tmp" -out "$enc" 2>/dev/null; then
         chmod a-w "$enc" 2>/dev/null || true
         echo "[sweep] Encrypted stray plaintext: $rel -> ${rel}.enc"
+
+        # Copy .v to BUILD so user can see it there (read-only)
+        local build_out="$BUILD/$rel"
+        mkdir -p "$(dirname "$build_out")"
+        chmod u+w "$build_out" 2>/dev/null || true
+        cp "$tmp" "$build_out" 2>/dev/null && chmod a-w "$build_out" 2>/dev/null || true
+        echo "[sweep] Copied to build/$rel (read-only)"
     else
         echo "[sweep] ERROR: could not encrypt $rel — restoring as plaintext" >&2
         unset key
