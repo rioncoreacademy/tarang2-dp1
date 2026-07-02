@@ -38,6 +38,16 @@ if [[ ! -f "$KEYFILE" ]]; then
 fi
 
 mkdir -p "$BUILD"
+
+# Remove ghost directories left by old images where WORK was empty
+find "$BUILD" -mindepth 1 -maxdepth 1 -type d | while IFS= read -r d; do
+    base="$(basename "$d")"
+    if [[ ! -d "$WORK/$base" ]]; then
+        rm -rf "$d"
+        echo "[decrypt-all] Removed ghost directory: $d"
+    fi
+done
+
 KEY=$(cat "$KEYFILE")
 count=0
 while IFS= read -r enc; do
