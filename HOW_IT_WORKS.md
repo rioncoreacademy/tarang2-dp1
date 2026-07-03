@@ -523,6 +523,47 @@ chipcraft-github-ssh-setup <GITHUB_PERSONAL_TOKEN> ["key title"]
 Needs a Personal Access Token with the `write:public_key` scope — see Step 2
 below for where to create one. The manual steps are below for reference.
 
+### Verifying `chipcraft-github-ssh-setup` works
+
+```bash
+# 1. Installed and on PATH
+which chipcraft-github-ssh-setup
+# -> /usr/local/bin/chipcraft-github-ssh-setup
+
+# 2. No-token error path — should print usage and exit 1, not hang/crash
+chipcraft-github-ssh-setup
+echo $?   # -> 1
+
+# 3. Real run — creates the token at github.com -> Settings -> Developer
+#    settings -> Personal access tokens -> Tokens (classic), write:public_key
+#    scope only
+chipcraft-github-ssh-setup "$YOUR_TOKEN" "test key"
+# Watch for:
+#   "No SSH key found ... generating a new ed25519 key..." (first run)
+#     or "Using existing key" (subsequent runs)
+#   "Success — key added to your GitHub account."
+#   ssh -T output containing "Hi <username>! You've successfully authenticated"
+
+# 4. Confirm on GitHub's side: github.com/settings/keys should list the new
+#    key under the title you gave it.
+
+# 5. Idempotency — run the exact same command again. Should say
+#    "Using existing key" (not regenerate) and either succeed again or fail
+#    with GitHub's "key already in use" error — either way, no crash and the
+#    existing key file is untouched.
+chipcraft-github-ssh-setup "$YOUR_TOKEN" "test key"
+
+# 6. End-to-end: actually use the key for a git operation (revert the
+#    remote back to HTTPS afterward if you don't want it left changed)
+cd /workspaces/projects/.build.enc
+git remote set-url origin git@github.com:narrave/chipcraft-lab-files.git
+git fetch origin
+
+# 7. Bad-token error path — should print a clean HTTP 401 + GitHub's error
+#    body, not hang or stack-trace
+chipcraft-github-ssh-setup "not-a-real-token"
+```
+
 ### Step 1 — Generate the key
 
 ```bash
