@@ -46,17 +46,43 @@ sudo iptables -A OUTPUT -d 172.16.0.0/12  -j ACCEPT   # Docker internal
 sudo iptables -A OUTPUT -d 10.0.0.0/8     -j ACCEPT   # Docker internal
 sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT   # DNS
 sudo iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT   # DNS over TCP
-# GitHub IP ranges (for git push / git clone)
-# Full published list: https://api.github.com/meta (git + web + api ranges)
-sudo iptables -A OUTPUT -p tcp --dport 443 -d 140.82.112.0/20  -j ACCEPT
-sudo iptables -A OUTPUT -p tcp --dport 443 -d 143.55.64.0/20   -j ACCEPT
-sudo iptables -A OUTPUT -p tcp --dport 443 -d 185.199.108.0/22 -j ACCEPT
-sudo iptables -A OUTPUT -p tcp --dport 443 -d 192.30.252.0/22  -j ACCEPT
-sudo iptables -A OUTPUT -p tcp --dport 443 -d 20.201.28.151/32 -j ACCEPT
-sudo iptables -A OUTPUT -p tcp --dport 443 -d 20.205.243.166/32 -j ACCEPT
-sudo iptables -A OUTPUT -p tcp --dport 443 -d 20.87.225.212/32 -j ACCEPT
-sudo iptables -A OUTPUT -p tcp --dport 22  -d 140.82.112.0/20  -j ACCEPT
-sudo iptables -A OUTPUT -p tcp --dport 22  -d 20.201.28.151/32 -j ACCEPT
+# GitHub IP ranges (for git push / git clone). Fetched live from GitHub's own
+# meta endpoint — done here, before the DROP policy below is set, so this
+# fetch itself isn't blocked. A hardcoded snapshot goes stale: GitHub's
+# web/git sections list ~15-30 individual /32 IPs each on top of 4 stable
+# CIDR blocks, and those individual IPs rotate — a previous static list here
+# was already missing most of the current ones, which silently hangs git
+# pull/clone (iptables DROP gives no error, just a hung connection) the
+# moment DNS resolves to an IP that isn't whitelisted. Fall back to the 4
+# broad, long-lived CIDR blocks alone if the meta fetch fails.
+GH_META=$(curl -fsSL --max-time 15 https://api.github.com/meta 2>/dev/null)
+if [ -n "$GH_META" ] && echo "$GH_META" | python3 -c '
+import sys, json
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+seen = set()
+for key in ("web", "api", "git"):
+    for cidr in data.get(key, []):
+        if ":" not in cidr and cidr not in seen:   # IPv4 only
+            seen.add(cidr)
+            print(cidr)
+' > /tmp/gh-ranges.txt 2>/dev/null && [ -s /tmp/gh-ranges.txt ]; then
+    while read -r cidr; do
+        sudo iptables -A OUTPUT -p tcp --dport 443 -d "$cidr" -j ACCEPT
+        sudo iptables -A OUTPUT -p tcp --dport 22  -d "$cidr" -j ACCEPT
+    done < /tmp/gh-ranges.txt
+    echo "GitHub egress allowlist: $(wc -l < /tmp/gh-ranges.txt) ranges fetched live from api.github.com/meta." >> /tmp/lab-crypto.log
+else
+    echo "WARNING: could not fetch api.github.com/meta — falling back to static GitHub CIDR blocks only." >> /tmp/lab-crypto.log
+    sudo iptables -A OUTPUT -p tcp --dport 443 -d 140.82.112.0/20  -j ACCEPT
+    sudo iptables -A OUTPUT -p tcp --dport 443 -d 143.55.64.0/20   -j ACCEPT
+    sudo iptables -A OUTPUT -p tcp --dport 443 -d 185.199.108.0/22 -j ACCEPT
+    sudo iptables -A OUTPUT -p tcp --dport 443 -d 192.30.252.0/22  -j ACCEPT
+    sudo iptables -A OUTPUT -p tcp --dport 22  -d 140.82.112.0/20  -j ACCEPT
+fi
+rm -f /tmp/gh-ranges.txt
 # Cloudflare Worker (decryption key fetch) — workers.dev sits behind Cloudflare's
 # anycast network, so a single resolved IP is not stable across requests.
 # Allow Cloudflare's published IPv4 ranges instead (https://www.cloudflare.com/ips-v4).
