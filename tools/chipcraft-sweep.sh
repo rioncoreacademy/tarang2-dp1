@@ -2,17 +2,17 @@
 # ChipCraft Lab — sweep watcher for WORK (.build.enc) and BUILD (build).
 #
 # WORK (.build.enc):
-#   - Plaintext .v files  → encrypt to .enc in WORK, copy .v to BUILD read-only, shred tmp
-#   - New .enc files       → lock read-only, decrypt copy into BUILD/
+#   - Plaintext .v files  → encrypt to .enc in WORK, copy .v to BUILD (writable), shred tmp
+#   - New .enc files       → lock read-only, decrypt copy into BUILD/ (writable)
 #
 # BUILD (build):
-#   - .enc files dropped here → decrypt to .v in same location,
-#                               move .enc to matching path in WORK,
-#                               lock both read-only
+#   - .enc files dropped here → decrypt to .v in same location (writable),
+#                               move .enc to matching path in WORK (locked)
 #   - .v files (user-created, no matching .enc in WORK)
-#                           → encrypt to .enc in WORK, lock .v in BUILD read-only
+#                           → encrypt to .enc in WORK, leave .v in BUILD writable
 #   - .v files (legitimate decrypt copy, matching .enc exists in WORK)
-#                           → re-lock read-only (no re-encrypt needed)
+#                           → left alone — direct editing in BUILD is permitted
+#                             (edits here do not propagate back to the .enc)
 #
 # Two layers: inotify for fast response + periodic poll as backstop.
 
@@ -44,7 +44,7 @@ _wait_for_key() {
 }
 
 # .enc dropped into BUILD:
-#   1. Decrypt → .v in same BUILD location (read-only)
+#   1. Decrypt → .v in same BUILD location (writable)
 #   2. Move .enc → WORK at same relative path (read-only)
 _handle_build_enc() {
     local path="$1"
@@ -59,7 +59,6 @@ _handle_build_enc() {
 
     chmod u+w "$plain" 2>/dev/null || true
     if openssl enc -d -aes-256-cbc -pbkdf2 -k "$key" -in "$path" -out "$plain" 2>/dev/null; then
-        chmod a-w "$plain" 2>/dev/null || true
         echo "[sweep] Decrypted build/$rel -> build/${rel%.enc}"
     else
         echo "[sweep] ERROR: decrypt failed for build/$rel" >&2
@@ -74,7 +73,7 @@ _handle_build_enc() {
 
 # .v dropped into BUILD (user-created, no matching .enc in WORK):
 #   1. Encrypt .v → .enc in WORK
-#   2. Lock .v in BUILD read-only (it becomes the legitimate decrypted copy)
+#   2. Leave .v in BUILD writable (it becomes the legitimate decrypted copy)
 _handle_build_v() {
     local path="$1"
     local rel="${path#"$BUILD"/}"
@@ -90,7 +89,6 @@ _handle_build_v() {
     if openssl enc -aes-256-cbc -pbkdf2 -salt -k "$key" -in "$path" -out "$tmp" 2>/dev/null; then
         mv -f "$tmp" "$enc_in_work"
         chmod a-w "$enc_in_work" 2>/dev/null || true
-        chmod a-w "$path"        2>/dev/null || true
         echo "[sweep] Encrypted build/$rel -> .build.enc/${rel}.enc"
     else
         rm -f "$tmp"
@@ -126,8 +124,8 @@ _sweep_file() {
             _is_allowed "$path" && return 0
             local rel="${path#"$BUILD"/}"
             if [[ -f "$WORK/${rel}.enc" ]]; then
-                # Legitimate decrypted copy — just re-lock
-                chmod a-w "$path" 2>/dev/null || true
+                # Legitimate decrypted copy — left writable, direct editing permitted
+                :
             else
                 # User-created with no matching .enc — encrypt to WORK, lock here
                 _handle_build_v "$path"
@@ -155,7 +153,6 @@ _sweep_file() {
             key=$(cat "$KEYFILE")
             chmod u+w "$out" 2>/dev/null || true
             if openssl enc -d -aes-256-cbc -pbkdf2 -k "$key" -in "$path" -out "$out" 2>/dev/null; then
-                chmod a-w "$out" 2>/dev/null || true
                 echo "[sweep] Synced $rel -> build/${rel%.enc}"
             fi
             unset key
@@ -185,12 +182,12 @@ _sweep_file() {
         chmod a-w "$enc" 2>/dev/null || true
         echo "[sweep] Encrypted stray plaintext: $rel -> ${rel}.enc"
 
-        # Copy .v to BUILD so user can see it there (read-only)
+        # Copy .v to BUILD so user can see it there (writable)
         local build_out="$BUILD/$rel"
         mkdir -p "$(dirname "$build_out")"
         chmod u+w "$build_out" 2>/dev/null || true
-        cp "$tmp" "$build_out" 2>/dev/null && chmod a-w "$build_out" 2>/dev/null || true
-        echo "[sweep] Copied to build/$rel (read-only)"
+        cp "$tmp" "$build_out" 2>/dev/null
+        echo "[sweep] Copied to build/$rel"
     else
         echo "[sweep] ERROR: could not encrypt $rel — restoring as plaintext" >&2
         unset key

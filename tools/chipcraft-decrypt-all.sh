@@ -72,8 +72,6 @@ unset KEY
 
 echo "[decrypt-all] Decrypted $count file(s) into $BUILD"
 
-# Lock only the decrypted .v source files read-only so students cannot edit
-# them directly. Directories and compiled output (obj_dir/, Vtb_*, .vvp, .vcd)
-# must remain writable/executable — Verilator and iverilog need to create and
-# run binaries in the same BUILD tree.
-find "$BUILD" -name "*.v" -exec chmod a-w {} \; 2>/dev/null || true
+# Decrypted .v source files are left writable — direct editing in BUILD is
+# permitted (read-only lock removed by design decision, see HOW_IT_WORKS.md).
+find "$BUILD" -name "*.v" -exec chmod u+w {} \; 2>/dev/null || true

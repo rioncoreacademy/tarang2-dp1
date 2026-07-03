@@ -144,10 +144,9 @@ function! s:Encrypt()
       let l:rel = l:inner[len(s:lab_root) + 1:]
       let l:build_copy = s:build_root . '/' . l:rel
       if isdirectory(fnamemodify(l:build_copy, ':h'))
-        " Temporarily unlock the read-only build copy before updating it
+        " Build copy is left writable — direct editing in build/ is permitted
         call system('chmod u+w ' . shellescape(l:build_copy) . ' 2>/dev/null || true')
         call writefile(readfile(l:src_for_enc, 'b'), l:build_copy, 'b')
-        call system('chmod a-w ' . shellescape(l:build_copy) . ' 2>/dev/null || true')
       endif
     endif
   endif
@@ -269,10 +268,9 @@ function! s:GuardedWrite()
     call mkdir(fnamemodify(l:enc_path, ':h'), 'p')
     call rename(l:tmp_enc, l:enc_path)
     call system('chmod a-w ' . shellescape(l:enc_path) . ' 2>/dev/null || true')
-    " Temporarily unlock the build copy to write the updated plaintext
+    " Build copy is left writable — direct editing in build/ is permitted
     call system('chmod u+w ' . shellescape(l:path) . ' 2>/dev/null || true')
     call s:PassthroughWrite()
-    call system('chmod a-w ' . shellescape(l:path) . ' 2>/dev/null || true')
     echom 'ChipCraft: saved ' . fnamemodify(l:path, ':t') . ' and updated ' . fnamemodify(l:enc_path, ':t')
     return
   endif
