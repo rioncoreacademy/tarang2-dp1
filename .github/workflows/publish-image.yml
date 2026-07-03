@@ -16,6 +16,8 @@ on:
       - tools/chipcraft-sweep.sh
       - tools/chipcraft-crypt.vim
       - tools/chipcraft-vim-wrapper.sh
+      - tools/chipcraft-refresh-github-ips.sh
+      - novnc-rebrand.js
 
 jobs:
   build-and-push:

@@ -83,6 +83,7 @@ an environment variable in the container, so `docker inspect` reveals nothing us
 | `tools/chipcraft-tree.sh` | chipcraft-lab | Container — decrypts/shreds a whole subtree on demand (session-scoped alternative; not required for `tarang2_dp1` day to day, see below) |
 | `tools/chipcraft-decrypt-all.sh` | chipcraft-lab | Container — decrypts every `.enc` under `~/lab` into `~/lab/build` once at startup, persists for the whole session (deliberate tradeoff — see "Multi-file projects" below) |
 | `tools/chipcraft-sweep.sh` | chipcraft-lab | Container — background watcher; encrypts `.v` in WORK and syncs to BUILD; encrypts user-created `.v` in BUILD to WORK |
+| `tools/chipcraft-refresh-github-ips.sh` | chipcraft-lab | Installed as `/usr/local/bin/chipcraft-refresh-github` — re-fetches GitHub's current IP ranges and allowlists them in the egress firewall on demand, for when `git pull`/`clone`/`push` hangs because GitHub rotated an IP since container start |
 | `tools/chipcraft-vim-wrapper.sh` | chipcraft-lab | Installed as `/usr/local/bin/vi`, `vim`, `gvim` — silently redirects `*.v` args to `*.v.enc` so users cannot create raw `.v` files |
 | `tools/chipcraft-crypt.vim` | chipcraft-lab | System-wide gvim plugin — decrypts/encrypts `*.v.enc` in memory, no plaintext file ever written |
 | `tools/watermark.py` | chipcraft-lab | Embeds / reads invisible trailing-space watermark |
