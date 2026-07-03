@@ -53,3 +53,13 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # GitHub Actions runners are ephemeral — without an explicit cache,
+          # Docker's layer cache never carries over between runs, so every
+          # push re-ran apt-get install (huge package list, i386 multiarch)
+          # and re-downloaded the OSS CAD Suite from scratch even for a
+          # one-line script edit near the bottom of the Dockerfile. Those
+          # layers come before any COPY of frequently-changed files (tools/*,
+          # entrypoint.sh), so caching them via the gha backend should make
+          # most future builds skip straight to the last few cheap layers.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
