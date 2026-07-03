@@ -102,12 +102,20 @@ RUN printf '%s\n' \
     && chmod 440 /etc/sudoers.d/lab-iptables
 
 # Install Verilator + GTKWave via OSS CAD Suite (latest stable release)
-# Fetches the latest release URL from GitHub API at build time.
-# To pin to a specific release: https://github.com/YosysHQ/oss-cad-suite-build/releases
+# Queries the release LIST (not /releases/latest) and picks the newest entry
+# that already has a linux-x64 .tgz asset attached. oss-cad-suite-build
+# publishes a new nightly release tag before its per-platform assets finish
+# uploading, so /releases/latest can point at a release with an empty assets
+# array for a while — assets[0] on that raises IndexError, $OSS_URL ends up
+# empty, and the download curl fails with no URL (this bit us in CI).
+# To pin to a specific release instead: https://github.com/YosysHQ/oss-cad-suite-build/releases
 RUN OSS_URL=$(curl -fsSL --max-time 30 \
-        "https://api.github.com/repos/YosysHQ/oss-cad-suite-build/releases/latest" \
+        "https://api.github.com/repos/YosysHQ/oss-cad-suite-build/releases?per_page=10" \
         | python3 -c \
-          "import sys,json; assets=[a['browser_download_url'] for a in json.load(sys.stdin)['assets'] if 'linux-x64' in a['name'] and a['name'].endswith('.tgz')]; print(assets[0])") \
+          "import sys, json; rels = json.load(sys.stdin); \
+url = next((a['browser_download_url'] for r in rels for a in r['assets'] if 'linux-x64' in a['name'] and a['name'].endswith('.tgz')), ''); \
+print(url)") \
+    && test -n "$OSS_URL" \
     && echo "Downloading OSS CAD Suite: $OSS_URL" \
     && curl -fSL --retry 3 --retry-delay 10 --max-time 600 "$OSS_URL" \
        -o /tmp/oss-cad-suite.tgz \
