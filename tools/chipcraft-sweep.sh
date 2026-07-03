@@ -131,13 +131,24 @@ _sweep_file() {
             "$BUILD"/.git/*)       return 0 ;;
         esac
 
+        # Fast, fork-free bailout for compiler/simulator churn (Verilator's
+        # obj_dir/, iverilog's .vvp, waveform dumps, …) before any of the
+        # heavier checks below. A full tarang2_dp1 build writes thousands of
+        # these; without this early exit every one of them was paying for an
+        # _is_allowed fork + a WORK stat, which visibly slowed down
+        # compile.pl once the checks below stopped being .v-only.
+        case "$path" in
+            */obj_dir/*|*.o|*.d|*.a|*.so|*.mk|*.log|*.vvp|*.vcd|*.fst|*.fsdb)
+                return 0 ;;
+        esac
+
         # .enc in BUILD → decrypt + move to WORK
         if [[ "$path" == *.enc ]]; then
             _handle_build_enc "$path"
             return 0
         fi
 
-        # Any non-.enc file in BUILD (.v, .c, .pl, .h, … — not just .v)
+        # Any remaining non-.enc file in BUILD (.v, .c, .pl, .h, … — not just .v)
         _is_allowed "$path" && return 0
         local rel="${path#"$BUILD"/}"
         if [[ -f "$WORK/${rel}.enc" ]]; then
