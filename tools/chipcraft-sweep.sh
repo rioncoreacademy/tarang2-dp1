@@ -6,11 +6,13 @@
 #   - New .enc files       → lock read-only, decrypt copy into BUILD/ (writable)
 #
 # BUILD (build):
-#   - .enc files dropped here → decrypt to .v in same location (writable),
+#   - .enc files dropped here → decrypt to real name in same location (writable),
 #                               move .enc to matching path in WORK (locked)
-#   - .v files (user-created, no matching .enc in WORK)
-#                           → encrypt to .enc in WORK, leave .v in BUILD writable
-#   - .v files (legitimate decrypt copy, matching .enc exists in WORK)
+#   - any non-.enc file, user-created, no matching .enc in WORK, extension in
+#     SOURCE_EXTENSIONS → encrypt to .enc in WORK, leave writable in BUILD.
+#     Applies to any recognized source extension (.v, .c, .pl, .h, …), not
+#     just .v — build output (obj_dir/*.o, Vtb_*, *.vvp, *.vcd, …) is left alone.
+#   - any non-.enc file, legitimate decrypt copy (matching .enc exists in WORK)
 #                           → left alone — direct editing in BUILD is permitted
 #                             (edits here do not propagate back to the .enc)
 #
@@ -24,6 +26,13 @@ KEYFILE="$HOME/.rbk_state"
 SCRATCH="$BUILD/.sweep-tmp"
 ALLOWLIST=("Makefile" ".gitignore" ".gitattributes" "README.md")
 
+# Same source-file scope chipcraft-crypt.vim documents handling (Verilog,
+# SystemVerilog, C, Perl, assembly, headers, sim scripts) — used to decide
+# whether a brand-new file with no matching .enc yet should be auto-encrypted.
+# Deliberately excludes build output (*.vvp, *.vcd, obj_dir/*.cpp, …), which
+# is text but not source and must never end up in the encrypted repo.
+SOURCE_EXTENSIONS=("v" "sv" "svh" "vh" "c" "h" "pl" "pm" "s" "asm" "py")
+
 mkdir -p "$SCRATCH"
 
 _is_allowed() {
@@ -31,6 +40,14 @@ _is_allowed() {
     base="$(basename "$1")"
     for a in "${ALLOWLIST[@]}"; do
         [[ "$base" == "$a" ]] && return 0
+    done
+    return 1
+}
+
+_is_source_ext() {
+    local ext="${1##*.}"
+    for e in "${SOURCE_EXTENSIONS[@]}"; do
+        [[ "$ext" == "$e" ]] && return 0
     done
     return 1
 }
@@ -71,9 +88,10 @@ _handle_build_enc() {
     echo "[sweep] Moved build/$rel -> .build.enc/$rel"
 }
 
-# .v dropped into BUILD (user-created, no matching .enc in WORK):
-#   1. Encrypt .v → .enc in WORK
-#   2. Leave .v in BUILD writable (it becomes the legitimate decrypted copy)
+# Text file dropped into BUILD (user-created, no matching .enc in WORK),
+# any extension:
+#   1. Encrypt it → .enc in WORK
+#   2. Leave it in BUILD writable (it becomes the legitimate decrypted copy)
 _handle_build_v() {
     local path="$1"
     local rel="${path#"$BUILD"/}"
@@ -119,21 +137,18 @@ _sweep_file() {
             return 0
         fi
 
-        # .v in BUILD
-        if [[ "$path" == *.v ]]; then
-            _is_allowed "$path" && return 0
-            local rel="${path#"$BUILD"/}"
-            if [[ -f "$WORK/${rel}.enc" ]]; then
-                # Legitimate decrypted copy — left writable, direct editing permitted
-                :
-            else
-                # User-created with no matching .enc — encrypt to WORK, lock here
-                _handle_build_v "$path"
-            fi
-            return 0
+        # Any non-.enc file in BUILD (.v, .c, .pl, .h, … — not just .v)
+        _is_allowed "$path" && return 0
+        local rel="${path#"$BUILD"/}"
+        if [[ -f "$WORK/${rel}.enc" ]]; then
+            # Legitimate decrypted copy, any extension — left writable,
+            # direct editing in BUILD is permitted
+            :
+        elif _is_source_ext "$path"; then
+            # New source file with no matching .enc — encrypt to WORK, leave writable
+            _handle_build_v "$path"
         fi
-
-        # Everything else in BUILD (Makefile, .vcd, .vh, etc.) — exempt
+        # else: build output (obj_dir/*.o, Vtb_*, *.vvp, *.vcd, …) — exempt
         return 0
     fi
 

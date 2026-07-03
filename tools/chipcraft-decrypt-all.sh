@@ -72,6 +72,7 @@ unset KEY
 
 echo "[decrypt-all] Decrypted $count file(s) into $BUILD"
 
-# Decrypted .v source files are left writable — direct editing in BUILD is
-# permitted (read-only lock removed by design decision, see HOW_IT_WORKS.md).
-find "$BUILD" -name "*.v" -exec chmod u+w {} \; 2>/dev/null || true
+# All decrypted source files are left writable, regardless of extension —
+# direct editing in BUILD is permitted (read-only lock removed by design
+# decision, see HOW_IT_WORKS.md).
+find "$BUILD" -type f -exec chmod u+w {} \; 2>/dev/null || true
