@@ -10,6 +10,7 @@ on:
       - entrypoint.sh
       - chipcraft-run.sh
       - novnc-index.html
+      - novnc-defaults.json
       - tools/chipcraft-key-init.sh
       - tools/chipcraft-tree.sh
       - tools/chipcraft-decrypt-all.sh

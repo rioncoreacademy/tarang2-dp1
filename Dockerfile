@@ -46,6 +46,8 @@ RUN apt-get update \
         # rendering as identical/generic squares under XFCE's GTK theme.
         adwaita-icon-theme \
         hicolor-icon-theme \
+        # Line-ending conversion (Windows CRLF -> Unix LF)
+        dos2unix \
         # SSH client
         openssh-client \
         # Python
@@ -181,6 +183,12 @@ RUN chmod +x /usr/local/bin/chipcraft-mount-exec.sh \
     && chmod 444 /etc/gitconfig /etc/chipcraft-gitignore
 
 COPY novnc-index.html /usr/share/novnc/index.html
+
+# noVNC reads defaults.json (if present alongside vnc.html) to pre-populate
+# its settings before the user ever opens the gear menu — this sets the
+# canvas to auto-scale to the browser window instead of rendering at a
+# fixed 1280x720 with black bars around it.
+COPY novnc-defaults.json /usr/share/novnc/defaults.json
 
 # Rebrand the stock noVNC connect screen's "noVNC" logo to "ChipCraft".
 # See novnc-rebrand.js header for why this is a runtime text-replace instead
