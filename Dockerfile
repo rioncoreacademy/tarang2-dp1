@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DISPLAY=:1 \
     VNC_PORT=5901 \
     NOVNC_PORT=6080 \
-    VNC_RESOLUTION=1280x720 \
+    VNC_RESOLUTION=1680x1050 \
     VNC_COL_DEPTH=24 \
     GITHUB_USER="user" \
     WORK=/workspaces/projects/.build.enc \
@@ -184,11 +184,18 @@ RUN chmod +x /usr/local/bin/chipcraft-mount-exec.sh \
 
 COPY novnc-index.html /usr/share/novnc/index.html
 
-# noVNC reads defaults.json (if present alongside vnc.html) to pre-populate
-# its settings before the user ever opens the gear menu — this sets the
-# canvas to auto-scale to the browser window instead of rendering at a
-# fixed 1280x720 with black bars around it.
-COPY novnc-defaults.json /usr/share/novnc/defaults.json
+# The Ubuntu-packaged novnc (1.0.0-5) predates defaults.json/mandatory.json
+# support entirely (verified: no reference to either in its ui.js), so a
+# dropped-in config file is silently ignored. The only way to change its
+# default behavior is patching the hardcoded default in ui.js itself.
+# This flips "resize" from 'off' to 'remote': TigerVNC's Xvnc here already
+# supports RandR/ExtendedDesktopSize (confirmed via XFCE's own Display
+# settings showing a resizable VNC-0 output), so 'remote' has the X session
+# itself resize to match the browser viewport exactly — sharper and simpler
+# than client-side canvas scaling, and needs no user interaction with the
+# settings gear.
+RUN sed -i "s/UI.initSetting('resize', 'off');/UI.initSetting('resize', 'remote');/" \
+        /usr/share/novnc/app/ui.js
 
 # Rebrand the stock noVNC connect screen's "noVNC" logo to "ChipCraft".
 # See novnc-rebrand.js header for why this is a runtime text-replace instead

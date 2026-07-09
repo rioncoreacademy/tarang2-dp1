@@ -2,7 +2,7 @@
 export USER="${USER:-ubuntu}"
 export HOME="${HOME:-/home/ubuntu}"
 
-VNC_GEOMETRY=${VNC_RESOLUTION:-1280x720}
+VNC_GEOMETRY=${VNC_RESOLUTION:-1680x1050}
 VNC_DEPTH=${VNC_COL_DEPTH:-24}
 VNC_PORT=${VNC_PORT:-5901}
 NOVNC_PORT=${NOVNC_PORT:-6080}
@@ -115,6 +115,22 @@ touch "$HOME/.Xresources"
 mkdir -p "$HOME/.config/xfce4"
 cat > "$HOME/.config/xfce4/helpers.rc" <<'EOF'
 TerminalEmulator=xfce4-terminal
+EOF
+
+# Select Adwaita as the active GTK/icon theme. adwaita-icon-theme is
+# installed in the image, but a fresh XFCE session doesn't pick it as the
+# active theme on its own — xfsettingsd applies whatever xsettings.xml says,
+# and with none present toolbar icon lookups (e.g. gvim's) fall through to
+# hicolor's near-empty fallback set and render as blank/generic squares.
+mkdir -p "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml"
+cat > "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xsettings" version="1.0">
+  <property name="Net" type="empty">
+    <property name="ThemeName" type="string" value="Adwaita"/>
+    <property name="IconThemeName" type="string" value="Adwaita"/>
+  </property>
+</channel>
 EOF
 
 # Clean up any leftover lock files from a previous run
