@@ -7,7 +7,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DISPLAY=:1 \
     VNC_PORT=5901 \
     NOVNC_PORT=6080 \
-    VNC_RESOLUTION=1680x1050 \
     VNC_COL_DEPTH=24 \
     GITHUB_USER="user" \
     WORK=/workspaces/projects/.build.enc \
@@ -46,6 +45,9 @@ RUN apt-get update \
         # rendering as identical/generic squares under XFCE's GTK theme.
         adwaita-icon-theme \
         hicolor-icon-theme \
+        # This desktop runs XFCE, not GNOME — elementary-xfce is Xubuntu's
+        # own native icon theme (vs. Adwaita, GNOME's), set active below.
+        elementary-xfce-icon-theme \
         # Line-ending conversion (Windows CRLF -> Unix LF)
         dos2unix \
         # SSH client

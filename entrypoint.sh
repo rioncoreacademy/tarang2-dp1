@@ -2,7 +2,6 @@
 export USER="${USER:-ubuntu}"
 export HOME="${HOME:-/home/ubuntu}"
 
-VNC_GEOMETRY=${VNC_RESOLUTION:-1680x1050}
 VNC_DEPTH=${VNC_COL_DEPTH:-24}
 VNC_PORT=${VNC_PORT:-5901}
 NOVNC_PORT=${NOVNC_PORT:-6080}
@@ -128,7 +127,7 @@ cat > "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml" <<'EOF'
 <channel name="xsettings" version="1.0">
   <property name="Net" type="empty">
     <property name="ThemeName" type="string" value="Adwaita"/>
-    <property name="IconThemeName" type="string" value="Adwaita"/>
+    <property name="IconThemeName" type="string" value="elementary-xfce"/>
   </property>
 </channel>
 EOF
@@ -142,7 +141,6 @@ rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
 # -localhost yes      : VNC port is only reachable from inside this container
 # -noclipboard        : block clipboard sync between container and browser
 Xvnc :1 \
-    -geometry       "$VNC_GEOMETRY" \
     -depth          "$VNC_DEPTH" \
     -rfbport        "$VNC_PORT" \
     -SecurityTypes  None \
