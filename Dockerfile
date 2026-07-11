@@ -199,12 +199,18 @@ COPY novnc-index.html /usr/share/novnc/index.html
 RUN sed -i "s/UI.initSetting('resize', 'off');/UI.initSetting('resize', 'remote');/" \
         /usr/share/novnc/app/ui.js
 
-# Rebrand the stock noVNC connect screen's "noVNC" logo to "Tarang2_dp1".
+# Rebrand the stock noVNC connect screen's "noVNC" logo to "Tarang2p1".
 # See novnc-rebrand.js header for why this is a runtime text-replace instead
 # of patching vnc.html's markup directly (version-fragile).
 COPY novnc-rebrand.js /usr/share/novnc/tarang2-dp1-rebrand.js
 RUN sed -i 's#</body>#<script src="tarang2-dp1-rebrand.js"></script></body>#' \
         /usr/share/novnc/vnc.html
+
+# Default XFCE desktop wallpaper (RionCore Academy branding). Baked in
+# read-only here; entrypoint.sh points xfdesktop at this fixed path at
+# every container start rather than us guessing a per-user default.
+COPY vnc_background.png /usr/share/backgrounds/tarang2p1-background.png
+RUN chmod 444 /usr/share/backgrounds/tarang2p1-background.png
 
 # Hide the Clipboard button/panel in the noVNC sidebar. It's a client-side
 # text sync between the browser and the remote desktop, independent of

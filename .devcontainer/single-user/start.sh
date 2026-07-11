@@ -32,6 +32,24 @@ for i in $(seq 1 15); do
     sleep 1
 done
 
+# xfdesktop's backdrop properties are keyed by the actual RandR-detected
+# monitor name, which varies and can't be predicted ahead of time — the
+# xfce4-desktop.xml this container's entrypoint.sh seeds only covers the
+# common "monitor0" case. Wait for xfdesktop to register its real property
+# paths, then force every one of them onto the branded background.
+(
+    export DISPLAY=:1 XDG_RUNTIME_DIR=/tmp/runtime-ubuntu
+    for i in $(seq 1 30); do
+        props="$(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep -E '/(last-image|image-style)$')"
+        [[ -n "$props" ]] && break
+        sleep 1
+    done
+    while read -r p; do
+        [[ "$p" == *last-image ]] && xfconf-query -c xfce4-desktop -p "$p" -s /usr/share/backgrounds/tarang2p1-background.png
+        [[ "$p" == *image-style ]] && xfconf-query -c xfce4-desktop -p "$p" -s 4
+    done <<< "$props"
+) >> /tmp/xfce.log 2>&1 &
+
 # Find websockify
 WS=""
 for candidate in /usr/bin/websockify /usr/local/bin/websockify $(which websockify 2>/dev/null); do

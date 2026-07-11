@@ -20,10 +20,10 @@
       });
     });
     targets.forEach(function (el) {
-      el.textContent = 'Tarang2_dp1';
+      el.textContent = 'Tarang2p1';
     });
     if (document.title.indexOf('noVNC') !== -1) {
-      document.title = document.title.replace(/noVNC/g, 'Tarang2_dp1');
+      document.title = document.title.replace(/noVNC/g, 'Tarang2p1');
     }
   }
 
