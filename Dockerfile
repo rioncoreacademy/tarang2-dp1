@@ -154,6 +154,7 @@ COPY tools/tarang2-dp1-decrypt-all.sh /usr/local/bin/tarang2-dp1-decrypt-all.sh
 COPY tools/tarang2-dp1-sweep.sh     /usr/local/bin/tarang2-dp1-sweep.sh
 COPY tools/tarang2-dp1-refresh-github-ips.sh /usr/local/bin/tarang2-dp1-refresh-github
 COPY tools/tarang2-dp1-github-ssh-setup.sh /usr/local/bin/tarang2-dp1-github-ssh-setup
+COPY tools/tarang2-dp1-license-check.py /usr/local/bin/tarang2-dp1-license-check.py
 COPY tools/watermark.py           /usr/local/bin/watermark.py
 COPY tools/git-wrapper.sh         /usr/local/bin/git
 COPY tools/tarang2-dp1-vim-wrapper.sh /usr/local/bin/tarang2-dp1-vim-wrapper.sh
@@ -170,6 +171,7 @@ RUN chmod +x /usr/local/bin/tarang2-dp1-mount-exec.sh \
              /usr/local/bin/tarang2-dp1-sweep.sh \
              /usr/local/bin/tarang2-dp1-refresh-github \
              /usr/local/bin/tarang2-dp1-github-ssh-setup \
+             /usr/local/bin/tarang2-dp1-license-check.py \
              /usr/local/bin/watermark.py \
              /usr/local/bin/git \
              /usr/local/bin/tarang2-dp1-vim-wrapper.sh \

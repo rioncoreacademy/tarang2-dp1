@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import os
 import secrets
 import threading
@@ -27,6 +28,29 @@ CODESPACE_NAME       = os.environ.get("CODESPACE_NAME", "")         # set automa
 COMPOSE_NETWORK      = os.environ.get("COMPOSE_NETWORK", "nvr_default")
 # Bootstrap token is valid for this many seconds (consumed on first use)
 BOOTSTRAP_TTL        = int(os.environ.get("BOOTSTRAP_TTL", "30"))
+
+# License gate (see entrypoint.sh) — one license covers this whole server
+# deployment. Unset LICENSE_API_BASE_URL means the gate stays inactive
+# everywhere, same as it always has been.
+LICENSE_API_BASE_URL = os.environ.get("LICENSE_API_BASE_URL", "")
+LICENSE_KEY          = os.environ.get("LICENSE_KEY", "")
+
+
+def _server_license_fingerprint() -> str:
+    """SHA256 of this server's own machine-id — the "one system" this
+    deployment's license is locked to. Requires /etc/machine-id mounted
+    read-only into the api container (see docker-compose.yml)."""
+    try:
+        with open("/etc/machine-id") as f:
+            machine_id = f.read().strip()
+    except OSError:
+        return ""
+    if not machine_id:
+        return ""
+    return hashlib.sha256(machine_id.encode()).hexdigest()
+
+
+LICENSE_FINGERPRINT = _server_license_fingerprint() if LICENSE_API_BASE_URL else ""
 
 _sessions: dict = {}
 _lock = threading.Lock()
@@ -100,6 +124,11 @@ def _launch_container(github_user: str, port: int, session_token: str) -> str:
             "LAB_DIR":          "/workspaces/projects/build",
             # Used to watermark decrypted files so leaks can be traced
             "GITHUB_USER":      github_user,
+            # License gate (entrypoint.sh) — inactive unless LICENSE_API_BASE_URL
+            # is actually configured for this deployment.
+            "LICENSE_API_BASE_URL": LICENSE_API_BASE_URL,
+            "LICENSE_KEY":          LICENSE_KEY,
+            "LICENSE_FINGERPRINT":  LICENSE_FINGERPRINT,
         },
         volumes={
             SHARED_PATH: {"bind": "/home/ubuntu/shared", "mode": "ro"},

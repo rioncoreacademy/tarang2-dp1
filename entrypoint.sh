@@ -9,10 +9,46 @@ VNC_PASSWORD=${VNC_PASSWORD:-novnc}
 export WORK="${WORK:-/workspaces/projects/.build.enc}"
 export BUILD="${BUILD:-/workspaces/projects/build}"
 
+# ── License gate ──────────────────────────────────────────────────────────
+# Tier 1: no key at all -> the image itself refuses to run. Only applies
+# when LICENSE_API_BASE_URL is actually configured for this build/deployment
+# — unset (the default) skips both tiers and behaves as before.
+if [[ -n "${LICENSE_API_BASE_URL:-}" && -z "${LICENSE_KEY:-}" ]]; then
+    echo "[license] LICENSE_KEY not set — this image requires a license. Exiting." >&2
+    exit 1
+fi
+
+# Tier 2: key present but invalid for THIS machine (wrong/shared
+# fingerprint, expired, revoked, seat already used elsewhere) -> the
+# desktop still boots so the person can see why, but the lab folder itself
+# stays locked instead of being populated.
+LICENSE_OK=1
+if [[ -n "${LICENSE_API_BASE_URL:-}" ]]; then
+    if [[ -z "${LICENSE_FINGERPRINT:-}" ]]; then
+        LICENSE_OK=0
+    elif ! python3 /usr/local/bin/tarang2-dp1-license-check.py activate "$LICENSE_KEY" "$LICENSE_FINGERPRINT" \
+            >> /tmp/lab-crypto.log 2>&1 \
+      || ! python3 /usr/local/bin/tarang2-dp1-license-check.py validate "$LICENSE_KEY" "$LICENSE_FINGERPRINT" \
+            >> /tmp/lab-crypto.log 2>&1; then
+        LICENSE_OK=0
+    fi
+fi
+export LICENSE_OK
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── Clone project files FIRST (before firewall blocks GitHub) ────────────────
 # Server Mode skips this: BOOTSTRAP_TOKEN means the API will clone the
 # student's own fork shortly after startup (see api/main.py _clone_repo()).
-if [[ -z "${BOOTSTRAP_TOKEN:-}" && ! -d "$WORK/.git" ]]; then
+if [[ "$LICENSE_OK" != "1" ]]; then
+    mkdir -p "$WORK"
+    cat > "$WORK/LICENSE_LOCKED.txt" <<'EOF'
+This lab folder is locked: no valid license was found for this machine.
+This license key may already be activated on a different computer — each
+key only works on one machine. Contact your instructor/license holder.
+EOF
+    chmod 555 "$WORK"
+    echo "[license] Lab folder locked — no valid license for this machine." >> /tmp/lab-crypto.log
+elif [[ -z "${BOOTSTRAP_TOKEN:-}" && ! -d "$WORK/.git" ]]; then
     echo "[projects] Cloning tarang2-dp1-files -> $WORK …" >> /tmp/lab-crypto.log
     # Clone into a temp dir then merge — cloning directly into $WORK fails
     # when the build tmpfs mount already exists there (git sees non-empty dir).
@@ -158,7 +194,8 @@ EOF
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
 
 # Start Xvnc with no VNC-level password.
-# Security is already enforced at the GitHub OAuth layer before this container starts.
+# Security is enforced by the license gate above (Server Mode additionally
+# gates container creation itself before this container ever starts).
 # -SecurityTypes None : no VNC password — websockify (localhost) is the only caller
 # -localhost yes      : VNC port is only reachable from inside this container
 # -noclipboard        : block clipboard sync between container and browser
@@ -222,6 +259,12 @@ nohup $WS --web=/usr/share/novnc/ "$NOVNC_PORT" localhost:"$VNC_PORT" >> /tmp/no
 
 echo "Desktop ready on port $NOVNC_PORT"
 
+# Everything below populates/decrypts lab content — skip entirely when the
+# license gate above locked $WORK, so a locked-out machine never fetches
+# CHIPCRAFT_KEY or decrypts anything into $BUILD either. The folder lock is
+# real, not cosmetic.
+if [[ "$LICENSE_OK" == "1" ]]; then
+
 # Fetch key once and write it to ~/.rbk_state (mode 600). Decryption itself
 # happens inside gvim, in memory, when a student opens any *.enc file — no
 # plaintext file is ever written to disk (see tools/tarang2-dp1-crypt.vim).
@@ -256,6 +299,9 @@ export CLASS_TOKEN="${CLASS_TOKEN:-vlsi2026}"
   done ) &
 
 /usr/local/bin/tarang2-dp1-decrypt-all.sh >> /tmp/lab-crypto.log 2>&1 &
+
+fi
+# ─────────────────────────────────────────────────────────────────────────────
 
 # Keep container alive
 exec tail -f /dev/null

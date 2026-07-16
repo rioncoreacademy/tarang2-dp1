@@ -18,6 +18,7 @@ on:
       - tools/tarang2-dp1-vim-wrapper.sh
       - tools/tarang2-dp1-refresh-github-ips.sh
       - tools/tarang2-dp1-github-ssh-setup.sh
+      - tools/tarang2-dp1-license-check.py
       - novnc-rebrand.js
 
 jobs:

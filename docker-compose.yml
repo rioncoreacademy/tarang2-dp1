@@ -17,8 +17,13 @@ services:
       SESSION_TTL:          ${SESSION_TTL:-14400}
       PORT_START:           ${PORT_START:-6081}
       PORT_END:             ${PORT_END:-6180}
+      LICENSE_API_BASE_URL: ${LICENSE_API_BASE_URL:-}
+      LICENSE_KEY:          ${LICENSE_KEY:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # Read-only: this server's machine-id is what LICENSE_KEY gets locked
+      # to for this whole deployment (see api/main.py _server_license_fingerprint).
+      - /etc/machine-id:/etc/machine-id:ro
     restart: unless-stopped
 
   # This service is never started — it exists only so "docker compose build"
