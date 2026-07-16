@@ -9,9 +9,11 @@ import docker
 import httpx
 from fastapi import Cookie, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 GH_CLIENT_ID     = os.environ.get("GH_CLIENT_ID", "")
 GH_CLIENT_SECRET = os.environ.get("GH_CLIENT_SECRET", "")
@@ -190,7 +192,9 @@ def _login_page() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
-    body{background:#0d1117;color:#e6edf3;font-family:-apple-system,sans-serif;
+    body{background:linear-gradient(rgba(13,17,23,.88),rgba(13,17,23,.88)),
+         url('/static/Desktop_background.png') center/cover no-repeat fixed;
+         color:#e6edf3;font-family:-apple-system,sans-serif;
          display:flex;align-items:center;justify-content:center;min-height:100vh}
     .card{background:#161b22;border:1px solid #30363d;border-radius:12px;
           padding:48px 40px;text-align:center;width:360px}
@@ -234,7 +238,9 @@ def _portal_page(github_user: str) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     *{{margin:0;padding:0;box-sizing:border-box}}
-    body{{background:#0d1117;color:#e6edf3;font-family:-apple-system,sans-serif;
+    body{{background:linear-gradient(rgba(13,17,23,.88),rgba(13,17,23,.88)),
+         url('/static/Desktop_background.png') center/cover no-repeat fixed;
+         color:#e6edf3;font-family:-apple-system,sans-serif;
          display:flex;align-items:center;justify-content:center;min-height:100vh}}
     .card{{background:#161b22;border:1px solid #30363d;border-radius:12px;
           padding:48px 40px;text-align:center;width:400px}}

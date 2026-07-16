@@ -217,11 +217,13 @@ COPY vnc_background.png /usr/share/backgrounds/tarang2p1-background.png
 RUN chmod 444 /usr/share/backgrounds/tarang2p1-background.png
 
 # RionCore Academy branding on the noVNC pre-connect landing page.
-# Deliberately a DIFFERENT image (vnc_background_1.png) than the desktop
+# Deliberately a DIFFERENT image (Desktop_background.png) than the desktop
 # wallpaper above, by request. Has to live under /usr/share/novnc/ since
 # that's the only directory websockify's static file server
-# (--web=/usr/share/novnc/) actually serves over HTTP.
-COPY vnc_background_1.png /usr/share/novnc/vnc_background_1.png
+# (--web=/usr/share/novnc/) actually serves over HTTP. Destination filename
+# kept as vnc_background_1.png so the <img src> reference injected below
+# doesn't need to change.
+COPY Desktop_background.png /usr/share/novnc/vnc_background_1.png
 RUN chmod 444 /usr/share/novnc/vnc_background_1.png
 
 # Montserrat (SIL OFL licensed, github.com/google/fonts) to match the

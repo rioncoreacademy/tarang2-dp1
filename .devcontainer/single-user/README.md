@@ -8,7 +8,7 @@ Each student gets their own isolated Codespace with a full XFCE4 desktop running
 Student opens repo → creates Codespace → XFCE4 desktop opens on port 6080
 ```
 
-- The devcontainer pulls `ghcr.io/rioncoreacademy/tarang2-dp1:latest` from GitHub Container Registry
+- The devcontainer pulls `ghcr.io/rioncoreacademy/tarang2-dp1:v1.1` from GitHub Container Registry
 - `start.sh` launches TightVNC + websockify inside the container
 - Port 6080 is forwarded by Codespaces and opens automatically in the browser
 - No login required — password is `novnc`
@@ -57,10 +57,11 @@ Each Codespace runs independently so there is no limit on number of students —
 
 ## Docker Image
 
-The image is built automatically by GitHub Actions when the `Dockerfile` changes:
+The image is built automatically by GitHub Actions when the `Dockerfile` changes.
+Pin to a version tag rather than `:latest` (which moves on every push to `master`):
 
 ```
-ghcr.io/rioncoreacademy/tarang2-dp1:latest
+ghcr.io/rioncoreacademy/tarang2-dp1:v1.1
 ```
 
 Workflow: `.github/workflows/publish-image.yml`

@@ -121,6 +121,38 @@ Three ways to run Tarang2_dp1. Choose based on your needs:
 
 ---
 
+## License Gate
+
+Optional, opt-in layer separate from the Verilog-encryption system above:
+gates the image itself, and the lab folder specifically, behind a license
+key issued by a separate license API (see the `docker-license-test`
+project — `/activate` + `/validate`, fingerprint-locked to one machine via
+`max_activations=1`). Inactive unless `LICENSE_API_BASE_URL` is set for a
+given deployment/image build — existing deployments that don't set it are
+unaffected.
+
+Checked once at container startup, in `entrypoint.sh`, before anything else:
+
+- **Tier 1 — no `LICENSE_KEY` at all**: the container exits immediately.
+  No desktop, no VNC, nothing usable. This gates the image itself.
+- **Tier 2 — `LICENSE_KEY` present but invalid for this machine** (wrong or
+  shared `LICENSE_FINGERPRINT`, expired, revoked, or the license's single
+  seat is already used by a different machine): the desktop still boots —
+  so the person can see *why* — but `$WORK` (the lab folder) is left empty
+  except for a `LICENSE_LOCKED.txt` explaining the problem, and the
+  `CHIPCRAFT_KEY` fetch / decrypt-into-`$BUILD` steps never run either.
+
+`LICENSE_FINGERPRINT` is computed on the **host**, the same way
+`CHIPCRAFT_KEY`'s fingerprint concept already works for Windows in
+`docker-license-test/client/Get-Fingerprint.ps1` (SHA256 of a stable
+per-machine ID) — a container can't read the host's hardware IDs itself.
+`NVR/tools/get-fingerprint.sh` is the Linux/Mac equivalent. In Server Mode,
+one license covers the whole deployment: `api/main.py` computes the
+fingerprint once from the server's own machine ID and passes
+`LICENSE_KEY`/`LICENSE_FINGERPRINT` into every container it launches.
+
+---
+
 ## Encryption — Teacher Side
 
 ### The Key
@@ -692,15 +724,22 @@ postAttachCommand fires (runs AFTER Codespace secrets are injected):
 
 ```bash
 docker stop tarang2-dp1 && docker rm tarang2-dp1
-docker pull ghcr.io/rioncoreacademy/tarang2-dp1:v1.0
+docker pull ghcr.io/rioncoreacademy/tarang2-dp1:v1.1
+
+# Only needed if this image build is license-gated (LICENSE_API_BASE_URL set
+# at build/deploy time) — see "License Gate" below. Must run on the HOST.
+FP=$(bash tools/get-fingerprint.sh)
+
 docker run -d \
   --name tarang2-dp1 \
   --cap-add=NET_ADMIN \
   -p 6080:6080 \
   -e CLASS_TOKEN=vlsi2026 \
   -e GITHUB_USER=your_github_name \
+  -e LICENSE_KEY=your-license-key \
+  -e LICENSE_FINGERPRINT=$FP \
   --tmpfs /workspaces/projects/build:size=2g,uid=1000,gid=1000,mode=0700 \
-  ghcr.io/rioncoreacademy/tarang2-dp1:v1.0
+  ghcr.io/rioncoreacademy/tarang2-dp1:v1.1
 # Open http://localhost:6080 in your browser
 ```
 
@@ -802,19 +841,24 @@ PORT_END=6180
 Every push to `master` that touches `Dockerfile`, `entrypoint.sh`,
 `tools/tarang2-dp1-key-init.sh`, or `tools/tarang2-dp1-crypt.vim` triggers **GitHub Actions -> Publish Docker Image**
 which builds and pushes `ghcr.io/rioncoreacademy/tarang2-dp1:latest` automatically.
+Pushing a `vX.Y` git tag additionally publishes that exact version
+(`ghcr.io/rioncoreacademy/tarang2-dp1:vX.Y`) — deployments should pin to a
+version tag like `:v1.1` rather than the floating `:latest`, which moves on
+every push to `master`.
 
 ```bash
-docker pull ghcr.io/rioncoreacademy/tarang2-dp1:latest
-docker tag ghcr.io/rioncoreacademy/tarang2-dp1:latest ubuntu-novnc:latest
+docker pull ghcr.io/rioncoreacademy/tarang2-dp1:v1.1
+docker tag ghcr.io/rioncoreacademy/tarang2-dp1:v1.1 ubuntu-novnc:latest
 cd NVR
 docker compose up -d
 ```
 
-To roll out a new image after a code push:
+To roll out a new version after a code push (once a new version tag has
+been pushed):
 
 ```bash
-docker pull ghcr.io/rioncoreacademy/tarang2-dp1:latest
-docker tag  ghcr.io/rioncoreacademy/tarang2-dp1:latest ubuntu-novnc:latest
+docker pull ghcr.io/rioncoreacademy/tarang2-dp1:v1.1
+docker tag  ghcr.io/rioncoreacademy/tarang2-dp1:v1.1 ubuntu-novnc:latest
 # New student containers will use the updated image automatically.
 ```
 
