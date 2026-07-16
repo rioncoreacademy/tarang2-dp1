@@ -295,7 +295,7 @@ export CLASS_TOKEN="${CLASS_TOKEN:-vlsi2026}"
 # entrypoint.sh is the one script all of them share.
 ( while true; do
       sleep 1800
-      /usr/local/bin/tarang2p1-refresh-github >> /tmp/lab-crypto.log 2>&1
+      sudo /usr/local/bin/tarang2p1-refresh-github >> /tmp/lab-crypto.log 2>&1
   done ) &
 
 /usr/local/bin/tarang2p1-decrypt-all.sh >> /tmp/lab-crypto.log 2>&1 &

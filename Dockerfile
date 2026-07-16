@@ -104,9 +104,14 @@ RUN curl -fSL \
 # The wrapper remounts the build tmpfs with exec — Codespaces forces noexec
 # on --tmpfs mounts, which prevents compiled binaries from running.
 # Using a wrapper script avoids sudoers comma-parsing issues with mount -o.
+# tarang2p1-refresh-github is here too (root-owned, mode 700 below) — it
+# only touches iptables rules, never a user-owned file, so unlike
+# key-init/tree/github-ssh-setup it's safe to run as root without an
+# ownership-fixup step.
 RUN printf '%s\n' \
         "ubuntu ALL=(root) NOPASSWD: /sbin/iptables" \
         "ubuntu ALL=(root) NOPASSWD: /usr/local/bin/tarang2p1-mount-exec.sh" \
+        "ubuntu ALL=(root) NOPASSWD: /usr/local/bin/tarang2p1-refresh-github" \
         > /etc/sudoers.d/lab-iptables \
     && chmod 440 /etc/sudoers.d/lab-iptables
 
@@ -164,18 +169,22 @@ COPY tools/tarang2p1-gitignore    /etc/tarang2p1-gitignore
 # (any source type, not just Verilog). Loaded for every user automatically —
 # Debian/Ubuntu vim ships /usr/share/vim/vimfiles in 'runtimepath' by default.
 COPY tools/tarang2p1-crypt.vim    /usr/share/vim/vimfiles/plugin/tarang2p1-crypt.vim
-RUN chmod +x /usr/local/bin/tarang2p1-mount-exec.sh \
-             /usr/local/bin/tarang2p1-key-init.sh \
+RUN chmod +x /usr/local/bin/tarang2p1-key-init.sh \
              /usr/local/bin/tarang2p1-tree \
              /usr/local/bin/tarang2p1-decrypt-all.sh \
              /usr/local/bin/tarang2p1-sweep.sh \
-             /usr/local/bin/tarang2p1-refresh-github \
              /usr/local/bin/tarang2p1-github-ssh-setup \
              /usr/local/bin/tarang2p1-license-check.py \
              /usr/local/bin/watermark.py \
              /usr/local/bin/git \
              /usr/local/bin/tarang2p1-vim-wrapper.sh \
              /usr/local/lib/tarang2p1-hooks/pre-commit \
+    # Root-only, execute-via-sudo-NOPASSWD-only — unlike the tools above,
+    # neither of these ever writes a file ubuntu needs to own afterward
+    # (mount-exec only remounts tmpfs, refresh-github only touches iptables),
+    # so locking ubuntu out of reading their source has no ownership fallout.
+    && chown root:root /usr/local/bin/tarang2p1-mount-exec.sh /usr/local/bin/tarang2p1-refresh-github \
+    && chmod 700 /usr/local/bin/tarang2p1-mount-exec.sh /usr/local/bin/tarang2p1-refresh-github \
     # vi / vim / gvim all go through the wrapper — *.v args become *.v.enc
     && ln -sf /usr/local/bin/tarang2p1-vim-wrapper.sh /usr/local/bin/vi \
     && ln -sf /usr/local/bin/tarang2p1-vim-wrapper.sh /usr/local/bin/vim \
