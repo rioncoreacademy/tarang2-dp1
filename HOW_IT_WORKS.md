@@ -161,9 +161,10 @@ fingerprint once from the server's own machine ID and passes
 
 **Local Docker Mode's `activate`/`validate` calls also deliver the Verilog
 decryption key.** The license API's response carries `encryption_key` and
-`product_folder` (see `docker-license-test/LICENSING.md`'s "Products"
-section) — `entrypoint.sh` writes the key straight to `~/.rbk_state` and, if
-`product_folder` is set, sparse-checkouts only that subtree of
+`product_folders` (see `docker-license-test/LICENSING.md`'s "Products"
+section — a product can bundle more than one folder under the same key) —
+`entrypoint.sh` writes the key straight to `~/.rbk_state` and, if
+`product_folders` is non-empty, sparse-checkouts only those subtrees of
 `tarang2p1-files` instead of cloning the whole repo. This replaces
 Cloudflare/`CLASS_TOKEN` for this one path only — see "Key Delivery" below
 for how Server Mode and Codespace Mode still get their keys. Server Mode is
