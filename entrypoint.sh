@@ -441,6 +441,46 @@ else
 fi
 unset LICENSE_ENCRYPTION_KEY
 
+# Periodic re-validation for the life of the running container (Local
+# Docker Mode only) -- the gate above only checks once, at container
+# startup. Without this, a license revoked or expired after the container
+# is already up would keep working indefinitely until the next restart --
+# entrypoint.sh never runs again on its own. Re-checks /validate only
+# (not /activate -- that's a one-time seat claim, not a repeatable check)
+# periodically for the rest of the session. Fail CLOSED on an explicit
+# invalid response (revoked/expired/etc, a real `error` value) by killing
+# the desktop and showing the same lock screen the boot-time gate uses --
+# but a transient network hiccup (`unreachable`) must NOT lock out an
+# otherwise-legitimate customer, so that's treated as "skip this round,
+# try again next interval" instead of a hard failure.
+#
+# Real tradeoff, not free: killing xfce4-session also kills any open gvim
+# buffers, and unsaved edits only exist in that buffer until :w writes them
+# back to the encrypted file -- there is no graceful "save first" warning
+# before this fires.
+if [[ "$IS_LOCAL_DOCKER_LICENSE_PATH" == "1" ]]; then
+( while true; do
+      sleep 900
+      REVAL_OUT=$(python3 /usr/local/bin/tarang2p1-license-check.py validate "$LICENSE_KEY" "$LICENSE_FINGERPRINT" 2>>/tmp/lab-crypto.log)
+      REVAL_RC=$?
+      echo "$REVAL_OUT" >> /tmp/lab-crypto.log
+      if [[ $REVAL_RC -ne 0 ]]; then
+          REVAL_REASON=$(_extract_error "$REVAL_OUT")
+          if [[ "$REVAL_REASON" != unreachable* ]]; then
+              echo "[license] Re-validation failed mid-session (reason: $REVAL_REASON) — locking desktop." >> /tmp/lab-crypto.log
+              pkill -u ubuntu xfce4-session 2>/dev/null || true
+              cat > "$WORK/LICENSE_LOCKED.txt" <<EOF
+This project folder is locked: your license is no longer valid
+(reason: $REVAL_REASON). Contact RionCore Academy support.
+EOF
+              chmod 555 "$WORK"
+              DISPLAY=:1 XDG_RUNTIME_DIR=/tmp/runtime-ubuntu /usr/local/bin/tarang2p1-lockscreen.sh >> /tmp/xfce.log 2>&1 &
+              break
+          fi
+      fi
+  done ) &
+fi
+
 # Watch $WORK for stray plaintext appearing by any means other than gvim —
 # cp, mv, docker cp, anything. tarang2p1-crypt.vim only sees Vim's own
 # buffer I/O; this catches what that can't, auto-encrypting and shredding
