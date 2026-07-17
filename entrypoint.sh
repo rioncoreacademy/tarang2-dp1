@@ -136,18 +136,29 @@ elif [[ -z "${BOOTSTRAP_TOKEN:-}" && ${#LICENSE_PRODUCT_FOLDERS[@]} -gt 0 && ! -
     # repo. A plain `mv` of just the subfolders would discard .git (it lives
     # at the clone root), breaking the documented `git add/commit/push`
     # workflow — sparse-checkout keeps a real working tree while still only
-    # fetching the scoped content. --cone mode keeps root-level infra files
-    # (Makefile, .gitignore) present automatically alongside whatever's
-    # listed in `sparse-checkout set`. `git sparse-checkout set` natively
-    # accepts multiple paths, so bundled-folder products need no extra logic
-    # here beyond passing the whole array.
+    # fetching the scoped content.
+    #
+    # --no-cone (NOT --cone) is deliberate: cone mode always includes every
+    # root-level FILE unconditionally, regardless of what's passed to `set`
+    # -- tarang2p1-files has real lab content sitting loose at its root
+    # (counter.v.enc/tb_counter.v.enc, from the original single-file
+    # example), not just infra. Cone mode would leak that content into
+    # every scoped license, defeating the point of scoping. Non-cone
+    # patterns let us name the specific root files that are actually infra
+    # (Makefile/.gitignore/.gitattributes) instead of "all root files, no
+    # exceptions". `git sparse-checkout set` still accepts multiple
+    # patterns, so bundled-folder products need no extra logic here.
     echo "[projects] Cloning tarang2p1-files -> $WORK (scoped to: ${LICENSE_PRODUCT_FOLDERS[*]}) …" >> /tmp/lab-crypto.log
     TMPCLONE=$(mktemp -d)
+    SPARSE_PATTERNS=(/Makefile /.gitignore /.gitattributes /mywork/)
+    for _f in "${LICENSE_PRODUCT_FOLDERS[@]}"; do
+        SPARSE_PATTERNS+=("/$_f/")
+    done
     if /usr/bin/git clone --no-checkout https://github.com/rioncoreacademy/tarang2p1-files.git "$TMPCLONE" \
             >> /tmp/lab-crypto.log 2>&1 \
         && ( cd "$TMPCLONE" \
-             && git sparse-checkout init --cone \
-             && git sparse-checkout set "${LICENSE_PRODUCT_FOLDERS[@]}" mywork \
+             && git sparse-checkout init --no-cone \
+             && git sparse-checkout set "${SPARSE_PATTERNS[@]}" \
              && git checkout ) >> /tmp/lab-crypto.log 2>&1; then
         MISSING_FOLDERS=()
         for _f in "${LICENSE_PRODUCT_FOLDERS[@]}"; do
