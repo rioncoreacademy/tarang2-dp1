@@ -258,6 +258,47 @@ else
     sudo iptables -A OUTPUT -p tcp --dport 22  -d 140.82.112.0/20  -j ACCEPT
 fi
 rm -f /tmp/gh-ranges.txt
+# Local Docker Mode's periodic license re-validation (further below) needs
+# ongoing access to LICENSE_API_BASE_URL even after the DROP policy below
+# is set -- without this, every re-check after this point fails as
+# "unreachable" no matter what, since a customer's license API generally
+# isn't GitHub/Cloudflare/Docker-internal. Resolve its hostname to an IP
+# now (DNS is already allowlisted above) and allow just that IP:port, same
+# live-resolution idea as the GitHub allowlist above. _allow_license_api()
+# is also called again at the start of each periodic re-check (defined
+# near that loop) in case the resolved IP has since changed.
+_allow_license_api() {
+    [[ "$IS_LOCAL_DOCKER_LICENSE_PATH" == "1" && -n "${LICENSE_API_BASE_URL:-}" ]] || return 0
+    local host port ip
+    host=$(python3 -c "
+from urllib.parse import urlparse
+print(urlparse('$LICENSE_API_BASE_URL').hostname or '')" 2>/dev/null)
+    [[ -z "$host" ]] && return 0
+    port=$(python3 -c "
+from urllib.parse import urlparse
+u = urlparse('$LICENSE_API_BASE_URL')
+print(u.port or (443 if u.scheme == 'https' else 80))" 2>/dev/null)
+    # IPv4-specific resolution (socket.gethostbyname, not getent hosts):
+    # host.docker.internal resolves to an IPv6 address in this environment
+    # (Docker Desktop), which the legacy `iptables` command below can't
+    # accept at all -- and IPv6 egress isn't reliably routed here anyway.
+    ip=$(python3 -c "
+import socket
+try:
+    print(socket.gethostbyname('$host'))
+except Exception:
+    pass" 2>/dev/null)
+    if [[ -z "$ip" ]]; then
+        echo "[license] WARNING: could not resolve license API host '$host' — re-validation will report unreachable until this resolves." >> /tmp/lab-crypto.log
+        return 0
+    fi
+    if [[ "$ip" != "${_LICENSE_API_ALLOWED_IP:-}" ]]; then
+        sudo iptables -A OUTPUT -p tcp --dport "$port" -d "$ip" -j ACCEPT
+        echo "[license] Allowlisted license API for egress ($host -> $ip:$port)." >> /tmp/lab-crypto.log
+        _LICENSE_API_ALLOWED_IP="$ip"
+    fi
+}
+_allow_license_api
 # Cloudflare Worker (decryption key fetch) — workers.dev sits behind Cloudflare's
 # anycast network, so a single resolved IP is not stable across requests.
 # Allow Cloudflare's published IPv4 ranges instead (https://www.cloudflare.com/ips-v4).
@@ -461,6 +502,7 @@ unset LICENSE_ENCRYPTION_KEY
 if [[ "$IS_LOCAL_DOCKER_LICENSE_PATH" == "1" ]]; then
 ( while true; do
       sleep 3600
+      _allow_license_api
       REVAL_OUT=$(python3 /usr/local/bin/tarang2p1-license-check.py validate "$LICENSE_KEY" "$LICENSE_FINGERPRINT" 2>>/tmp/lab-crypto.log)
       REVAL_RC=$?
       echo "$REVAL_OUT" >> /tmp/lab-crypto.log
