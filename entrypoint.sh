@@ -57,7 +57,7 @@ try:
     d = json.load(sys.stdin)
 except Exception:
     d = {}
-print(f"{d.get(\"encryption_key\", \"\")}\t{d.get(\"product_folder\", \"\")}")')
+print(d.get("encryption_key", "") + "\t" + d.get("product_folder", ""))')
         fi
     fi
 fi
