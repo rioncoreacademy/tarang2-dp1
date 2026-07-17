@@ -460,7 +460,7 @@ unset LICENSE_ENCRYPTION_KEY
 # before this fires.
 if [[ "$IS_LOCAL_DOCKER_LICENSE_PATH" == "1" ]]; then
 ( while true; do
-      sleep 900
+      sleep 3600
       REVAL_OUT=$(python3 /usr/local/bin/tarang2p1-license-check.py validate "$LICENSE_KEY" "$LICENSE_FINGERPRINT" 2>>/tmp/lab-crypto.log)
       REVAL_RC=$?
       echo "$REVAL_OUT" >> /tmp/lab-crypto.log
